@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  AGENT
+  USER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  INTERNET_NETWORK
+  VPN
+  PC_LAPTOP
+  PRINTER_SCANNER
+  ACCOUNTS_ACCESS
+  EMAIL
+  SOFTWARE_APPLICATION
+  SERVER_SYSTEM
+  REQUESTS
+  SECURITY
+  OTHERS
+}
+
+enum ActivityAction {
+  CREATED
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  ASSIGNED
+  UNASSIGNED
+  COMMENTED
+  UPDATED
+  CLOSED
+  ATTACHMENT_ADDED
+  ATTACHMENT_DELETED
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  password      String
+  role          Role     @default(USER)
+  isActive      Boolean  @default(true)
+  // Defaults to true so this migration doesn't lock out existing/seeded
+  // accounts that were created before email verification existed.
+  // auth.service.js explicitly sets this to false for brand-new
+  // registrations going through the public /auth/register endpoint.
+  emailVerified Boolean  @default(true)
+  department    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ticketsCreated     Ticket[]                 @relation("TicketCreatedBy")
+  ticketsAssigned    Ticket[]                 @relation("TicketAssignedTo")
+  comments           Comment[]
+  activities         TicketHistory[]
+  attachments        TicketAttachment[]
+  verificationTokens EmailVerificationToken[]
+  auditEvents        AuditEvent[]
+  onboarding         UserOnboarding?
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model UserOnboarding {
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  completedSteps Json      @default("[]")
+  dismissedAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_onboarding")
+}
+
+// Security and business audit trail. It intentionally stores metadata, never
+// passwords, tokens, authorization headers, comment bodies, or file contents.
+model AuditEvent {
+  id          String   @id @default(uuid())
+  eventType   String
+  entityType  String
+  entityId    String
+  requestId   String?
+  metadata    Json?
+  actorUserId String?
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+model Ticket {
+  id                String         @id @default(uuid())
+  title             String
+  description       String         @db.Text
+  status            TicketStatus   @default(OPEN)
+  priority          TicketPriority @default(MEDIUM)
+  category          TicketCategory @default(OTHERS)
+  isWorkBlocking    Boolean        @default(false)
+  impactDescription String?        @db.VarChar(500)
+
+  createdById String
+  createdBy   User   @relation("TicketCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+
+  assignedToId String?
+  assignedTo   User?   @relation("TicketAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  closedAt  DateTime?
+
+  comments    Comment[]
+  history     TicketHistory[]
+  attachments TicketAttachment[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([status, priority])
+  @@index([createdAt])
+  @@map("tickets")
+}
+
+model Comment {
+  id         String  @id @default(uuid())
+  content    String  @db.Text
+  isInternal Boolean @default(false)
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ticketId])
+  @@index([authorId])
+  @@map("comments")
+}
+
+model TicketHistory {
+  id     String         @id @default(uuid())
+  action ActivityAction @default(CREATED)
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  description String
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ticket_history")
+}
+
+// Files are stored on local disk under server/uploads/ (see upload.js
+// middleware), NOT in the database — only metadata + the relative storage
+// path live here. storagePath is never served as a raw static path; every
+// read goes through the authenticated, ticket-authorization-checked
+// download route in attachment.service.js.
+model TicketAttachment {
+  id               String @id @default(uuid())
+  originalFileName String
+  storagePath      String // relative path under the uploads root, not web-exposed directly
+  mimeType         String
+  fileSize         Int // bytes
+
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([uploadedById])
+  @@map("ticket_attachments")
+}
+
+// Verification tokens are stored as SHA-256 HASHES, never the raw token —
+// the raw token only ever exists in the email link and in memory during
+// generation/verification. A leaked database dump can't be used to forge
+// verified accounts. A fresh row is created on register/resend; the
+// previous unused row for that user is deleted at that point (see
+// auth.service.js), so at most one active token exists per user.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime? // set once, then the token can never verify again
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("email_verification_tokens")
+}

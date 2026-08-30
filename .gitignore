@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+
+# Build and test output
+dist/
+build/
+coverage/
+.nyc_output/
+.vite/
+.cache/
+.eslintcache
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files (public examples remain eligible)
+.env
+.env.*
+!.env.example
+!**/.env.example
+.envrc
+.direnv/
+
+# Runtime uploads and private local documents
+uploads/
+*.pdf
+
+# Local databases and Prisma-generated output
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+server/prisma/generated/
+server/src/generated/
+
+# Local certificates and private keys
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Orphan root lockfile (the runnable apps have their own manifests and locks)
+/package-lock.json

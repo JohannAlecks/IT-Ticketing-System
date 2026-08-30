@@ -1,0 +1,15 @@
+const express = require('express');
+const authenticate = require('../../middleware/authenticate');
+const authorize = require('../../middleware/authorize');
+const validate = require('../../middleware/validate');
+const createRateLimit = require('../../middleware/rateLimit');
+const env = require('../../config/env');
+const controller = require('./settings.controller');
+const { updateProfileSchema, changePasswordSchema } = require('./settings.schema');
+const router = express.Router();
+router.use(authenticate);
+router.get('/me', controller.me);
+router.patch('/me', validate(updateProfileSchema), controller.updateProfile);
+router.patch('/me/password', createRateLimit({ windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS, max: Math.max(3, Math.floor(env.AUTH_RATE_LIMIT_MAX / 2)), keyGenerator: (req) => req.user?.id || req.ip }), validate(changePasswordSchema), controller.changePassword);
+router.get('/system', authorize('ADMIN'), controller.systemInfo);
+module.exports = router;
