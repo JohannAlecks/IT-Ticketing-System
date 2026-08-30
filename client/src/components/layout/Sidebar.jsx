@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, User, LifeBuoy, ClipboardList, ScrollText, X, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, User, LifeBuoy, ClipboardList, ScrollText, X, Sparkles, BarChart3 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const linkClass = ({ isActive }) =>
@@ -31,7 +31,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         <p className="eyebrow px-3 pb-2 pt-1">Workspace</p>
         <NavLink to="/dashboard" className={linkClass}>
-          <LayoutDashboard className="h-[18px] w-[18px]" /> Home
+          <LayoutDashboard className="h-[18px] w-[18px]" /> Summary
         </NavLink>
         <NavLink to="/tickets" className={linkClass}>
           <Ticket className="h-[18px] w-[18px]" /> {ticketsLabel}
@@ -46,6 +46,11 @@ export default function Sidebar({ mobileOpen, onClose }) {
         <NavLink to="/tickets/new" className={linkClass}>
           <PlusCircle className="h-[18px] w-[18px]" /> New Ticket
         </NavLink>
+        {(role === 'AGENT' || role === 'ADMIN') && (
+          <NavLink to="/reports" className={linkClass}>
+            <BarChart3 className="h-[18px] w-[18px]" /> {role === 'AGENT' ? 'My Reports' : 'Reports'}
+          </NavLink>
+        )}
         <NavLink to="/get-started" className={linkClass}><Sparkles className="h-[18px] w-[18px]" /> Get started</NavLink>
 
         {role === 'ADMIN' && (

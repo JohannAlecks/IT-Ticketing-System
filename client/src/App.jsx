@@ -17,6 +17,7 @@ import UsersPage from './pages/UsersPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AuditLogPage from './pages/AuditLogPage';
 import GetStartedPage from './pages/GetStartedPage';
+import ReportsPage from './pages/ReportsPage';
 
 export default function App() {
   return (
@@ -37,6 +38,11 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/get-started" element={<GetStartedPage />} />
+
+          {/* Agent and admin reporting; the existing guard redirects USERs. */}
+          <Route element={<ProtectedRoute roles={['AGENT', 'ADMIN']} />}>
+            <Route path="/reports" element={<ReportsPage />} />
+          </Route>
 
           {/* Agent-only */}
           <Route element={<ProtectedRoute roles={['AGENT']} />}>

@@ -11,4 +11,9 @@ const getAgentWorkload = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { workload } });
 });
 
-module.exports = { getStats, getAgentWorkload };
+const getSummary = asyncHandler(async (req, res) => {
+  const summary = await dashboardService.getSummary(req.user);
+  res.status(200).json({ success: true, data: summary });
+});
+
+module.exports = { getStats, getAgentWorkload, getSummary };

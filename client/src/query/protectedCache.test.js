@@ -12,6 +12,8 @@ describe('protected cache ownership', () => {
     const client = makeClient();
     client.setQueryData(protectedQueryKeys.ticket('account-a', 'ticket-1'), { owner: 'a' });
     client.setQueryData(protectedQueryKeys.ticket('account-b', 'ticket-1'), { owner: 'b' });
+    client.setQueryData([...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary', { from: '2026-08-01', to: '2026-08-30' }], { owner: 'a' });
+    client.setQueryData([...protectedQueryKeys.reports('account-b'), 'ADMIN', 'tickets', { page: 1 }], { owner: 'b' });
     client.setQueryData(['public', 'categories'], ['Hardware']);
     client.getMutationCache().build(client, {
       mutationKey: protectedMutationKeys.ticket('account-a', 'update', 'ticket-1'),
@@ -22,8 +24,30 @@ describe('protected cache ownership', () => {
 
     expect(client.getQueryData(protectedQueryKeys.ticket('account-a', 'ticket-1'))).toBeUndefined();
     expect(client.getQueryData(protectedQueryKeys.ticket('account-b', 'ticket-1'))).toBeUndefined();
+    expect(client.getQueryData([...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary', { from: '2026-08-01', to: '2026-08-30' }])).toBeUndefined();
+    expect(client.getQueryData([...protectedQueryKeys.reports('account-b'), 'ADMIN', 'tickets', { page: 1 }])).toBeUndefined();
     expect(client.getQueryData(['public', 'categories'])).toEqual(['Hardware']);
     expect(client.getMutationCache().findAll({ mutationKey: protectedMutationKeys.ticket('account-a', 'update', 'ticket-1') })).toHaveLength(0);
+  });
+
+  it('keeps reports under the protected account root with explicit summary and tickets suffixes', () => {
+    expect(protectedQueryKeys.reports('account-a')).toEqual(['protected', 'account-a', 'reports']);
+    expect([...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary', { interval: 'day' }]).toEqual([
+      'protected',
+      'account-a',
+      'reports',
+      'AGENT',
+      'summary',
+      { interval: 'day' },
+    ]);
+    expect([...protectedQueryKeys.reports('account-a'), 'ADMIN', 'tickets', { page: 1 }]).toEqual([
+      'protected',
+      'account-a',
+      'reports',
+      'ADMIN',
+      'tickets',
+      { page: 1 },
+    ]);
   });
 
   it('aborts and removes an in-flight protected query', async () => {

@@ -9,6 +9,7 @@ export const protectedQueryKeys = {
   comments: (userId, ticketId) => [PROTECTED_QUERY_SCOPE, userId, 'comments', ticketId],
   attachments: (userId, ticketId) => [PROTECTED_QUERY_SCOPE, userId, 'attachments', ticketId],
   dashboard: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'dashboard'],
+  reports: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'reports'],
   users: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'users'],
   agents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'agents'],
   auditEvents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'audit-events'],

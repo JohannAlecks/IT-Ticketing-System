@@ -3,6 +3,17 @@ import { dashboardApi } from '../api/dashboard.api';
 import { useAuth } from '../context/AuthContext';
 import { protectedQueryKeys } from '../query/protectedCache';
 
+export function useDashboardSummary() {
+  const { user } = useAuth();
+  const userId = user?.id;
+  return useQuery({
+    queryKey: protectedQueryKeys.dashboard(userId),
+    queryFn: ({ signal }) => dashboardApi.getSummary(signal),
+    enabled: !!userId,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useDashboardStats() {
   const { user } = useAuth();
   const userId = user?.id;
