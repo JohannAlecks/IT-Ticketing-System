@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const env = require('../../config/env');
 
 const WINDOW_DAYS = 7;
 const ACTIVE_STATUSES = ['OPEN', 'IN_PROGRESS', 'PENDING'];
@@ -167,7 +168,7 @@ async function getAdminSummary(user, cutoff, generatedAt) {
       priorityQueue,
       recentAudit,
     },
-    operations: { emailDeliveryConfigured: Boolean(process.env.EMAIL_PROVIDER) },
+    operations: { emailDeliveryConfigured: env.EMAIL_PROVIDER === 'resend' },
   });
 }
 

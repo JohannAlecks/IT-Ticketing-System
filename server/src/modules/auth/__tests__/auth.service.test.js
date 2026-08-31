@@ -13,6 +13,7 @@ jest.mock('../../../config/prisma', () => ({
     updateMany: jest.fn(),
   },
   auditEvent: { create: jest.fn() },
+  $queryRaw: jest.fn(async () => [{ id: 'user-1' }]),
   $transaction: jest.fn(async (callback) => callback(mockPrisma)),
 }));
 
@@ -26,12 +27,15 @@ jest.mock('../../../utils/jwt', () => ({
 }));
 
 jest.mock('../../../utils/mailer', () => ({
-  sendMail: jest.fn(async () => ({ delivered: false, reason: 'no_provider_configured' })),
+  sendMail: jest.fn(async () => ({ status: 'unavailable' })),
 }));
+
+jest.mock('../../audit/audit.service', () => ({ recordAudit: jest.fn() }));
 
 const mockPrisma = require('../../../config/prisma');
 const { sendMail } = require('../../../utils/mailer');
 const { hashToken, generateSecureToken } = require('../../../utils/token');
+const { recordAudit } = require('../../audit/audit.service');
 const authService = require('../auth.service');
 
 const baseUser = (overrides = {}) => ({
@@ -74,7 +78,23 @@ describe('register', () => {
 
     expect(sendMail).toHaveBeenCalledTimes(1);
     expect(sendMail.mock.calls[0][0].to).toBe('uma@example.com');
+    expect(sendMail.mock.calls[0][0]).toEqual(expect.objectContaining({ html: expect.any(String), text: expect.any(String), idempotencyKey: 'verify-email/tok-1' }));
     expect(result).not.toHaveProperty('token');
+  });
+
+  test.each(['accepted', 'unavailable', 'failed'])('keeps account and hashed token when delivery is %s', async (status) => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockResolvedValue(baseUser());
+    mockPrisma.emailVerificationToken.deleteMany.mockResolvedValue({ count: 0 });
+    mockPrisma.emailVerificationToken.create.mockResolvedValue({ id: 'tok-1' });
+    sendMail.mockResolvedValueOnce({ status });
+
+    await expect(authService.register({ name: 'Uma User', email: 'uma@example.com', password: 'correct-password' }))
+      .resolves.toEqual({ email: 'uma@example.com', delivery: { status } });
+    expect(mockPrisma.user.create).toHaveBeenCalled();
+    expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ tokenHash: expect.any(String) }),
+    }));
   });
 
   test('rejects registration for an already-existing email', async () => {
@@ -218,31 +238,75 @@ describe('resendVerification', () => {
     expect(mockPrisma.emailVerificationToken.deleteMany).toHaveBeenCalled();
     expect(mockPrisma.emailVerificationToken.create).toHaveBeenCalled();
     expect(sendMail).toHaveBeenCalledTimes(1);
-    expect(result.message).toMatch(/may be sent when email delivery is available/i);
+    expect(result).toEqual(expect.objectContaining({
+      message: expect.stringMatching(/may be sent when email delivery is available/i),
+      retryAfterSeconds: expect.any(Number),
+    }));
   });
 
   test('returns the same generic message for a non-existent email (no enumeration)', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     const result = await authService.resendVerification('nobody@example.com');
     expect(sendMail).not.toHaveBeenCalled();
-    expect(result.message).toMatch(/if an eligible account exists/i);
+    expect(result).toEqual(expect.objectContaining({
+      message: expect.stringMatching(/if an eligible account exists/i),
+      retryAfterSeconds: expect.any(Number),
+    }));
   });
 
   test('returns the same generic message for an already-verified email (no enumeration)', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(baseUser({ emailVerified: true }));
     const result = await authService.resendVerification('uma@example.com');
     expect(sendMail).not.toHaveBeenCalled();
-    expect(result.message).toMatch(/if an eligible account exists/i);
+    expect(result).toEqual(expect.objectContaining({
+      message: expect.stringMatching(/if an eligible account exists/i),
+      retryAfterSeconds: expect.any(Number),
+    }));
   });
 
-  test('rejects a resend within the cooldown window', async () => {
+  test('returns the exact generic message within the cooldown window', async () => {
     mockPrisma.user.findUnique.mockResolvedValue(baseUser({ emailVerified: false }));
     mockPrisma.emailVerificationToken.findFirst.mockResolvedValue({
       id: 'tok-recent',
       createdAt: new Date(), // just created — well within any cooldown
     });
 
-    await expect(authService.resendVerification('uma@example.com')).rejects.toMatchObject({ statusCode: 429 });
+    const result = await authService.resendVerification('uma@example.com');
+    expect(result).toEqual({
+      message: 'If an eligible account exists, a verification email may be sent when email delivery is available.',
+      retryAfterSeconds: expect.any(Number),
+    });
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  test('rechecks eligibility under the account lock before rotating or sending', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(baseUser({ emailVerified: false }));
+    mockPrisma.$queryRaw.mockResolvedValueOnce([]);
+
+    await expect(authService.resendVerification('uma@example.com')).resolves.toEqual({
+      message: 'If an eligible account exists, a verification email may be sent when email delivery is available.',
+      retryAfterSeconds: expect.any(Number),
+    });
+    expect(mockPrisma.emailVerificationToken.findFirst).not.toHaveBeenCalled();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  test('audits only the safe delivery state without attributing the public request', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(baseUser({ emailVerified: false }));
+    mockPrisma.emailVerificationToken.findFirst.mockResolvedValue(null);
+    mockPrisma.emailVerificationToken.deleteMany.mockResolvedValue({ count: 1 });
+    mockPrisma.emailVerificationToken.create.mockResolvedValue({ id: 'tok-2' });
+    sendMail.mockResolvedValueOnce({ status: 'accepted' });
+
+    await authService.resendVerification('uma@example.com', 'request-1');
+
+    expect(recordAudit).toHaveBeenCalledWith({
+      eventType: 'auth.email_verification_requested',
+      entityType: 'user',
+      entityId: 'user-1',
+      actorUserId: null,
+      requestId: 'request-1',
+      metadata: { deliveryStatus: 'accepted' },
+    });
   });
 });

@@ -2,7 +2,7 @@ const { z } = require('zod');
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters').max(100),
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   // role is intentionally NOT accepted from the client on public registration
   // (prevents self-elevation to ADMIN/AGENT). Admins create agents via a
@@ -10,7 +10,7 @@ const registerSchema = z.object({
 }).strict();
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
 }).strict();
 
@@ -19,7 +19,7 @@ const verifyEmailSchema = z.object({
 }).strict();
 
 const resendVerificationSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().trim().toLowerCase().email('Invalid email address'),
 }).strict();
 
 module.exports = { registerSchema, loginSchema, verifyEmailSchema, resendVerificationSchema };

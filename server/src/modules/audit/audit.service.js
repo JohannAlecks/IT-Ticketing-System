@@ -4,9 +4,11 @@ const prisma = require('../../config/prisma');
 // database outage must not convert an otherwise successful ticket operation
 // into a failed client request; the error is logged with its correlation ID.
 function recordAudit({ eventType, entityType, entityId, actorUserId, requestId, metadata }) {
-  return prisma.auditEvent.create({
-    data: { eventType, entityType, entityId, actorUserId, requestId, metadata },
-  }).catch((error) => console.error(`Audit write failed req=${requestId || 'unknown'}`, error.message));
+  return Promise.resolve()
+    .then(() => prisma.auditEvent.create({
+      data: { eventType, entityType, entityId, actorUserId, requestId, metadata },
+    }))
+    .catch((error) => console.error(`Audit write failed req=${requestId || 'unknown'}`, error.message));
 }
 
 async function listAuditEvents({ page, limit, eventType }) {

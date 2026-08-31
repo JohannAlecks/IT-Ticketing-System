@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { authApi } from '../api/auth.api';
 import Button from '../components/ui/Button';
@@ -12,11 +12,12 @@ const SUCCESS_MESSAGE = 'Email verified successfully. You can now log in.';
 // verification link twice, while a failed transient request remains retryable.
 export function verifyEmailOnce(token) {
   if (!verificationRequests.has(token)) {
-    const request = authApi.verifyEmail(token).catch((error) => {
-      verificationRequests.delete(token);
-      throw error;
-    });
+    const request = authApi.verifyEmail(token);
     verificationRequests.set(token, request);
+    request.then(
+      () => { if (verificationRequests.get(token) === request) verificationRequests.delete(token); },
+      () => { if (verificationRequests.get(token) === request) verificationRequests.delete(token); },
+    );
   }
   return verificationRequests.get(token);
 }
@@ -29,9 +30,18 @@ export function isAlreadyVerifiedError(error) {
 // States: 'verifying' (in flight) -> 'success' | 'error'
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [token] = useState(() => searchParams.get('token'));
   const [status, setStatus] = useState('verifying');
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!token || !searchParams.has('token')) return;
+    const scrubbed = new URLSearchParams(searchParams);
+    scrubbed.delete('token');
+    navigate({ pathname: location.pathname, search: scrubbed.toString() }, { replace: true });
+  }, [location.pathname, navigate, searchParams, token]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -69,7 +79,7 @@ export default function VerifyEmailPage() {
             <div className="mb-4 flex justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
             </div>
-            <p className="text-sm text-gray-500">Verifying your email…</p>
+            <p className="text-sm text-gray-500" role="status" aria-live="polite">Verifying your email…</p>
           </>
         )}
 
@@ -81,7 +91,7 @@ export default function VerifyEmailPage() {
               </div>
             </div>
             <h1 className="text-xl font-semibold text-gray-900">Email verified</h1>
-            <p className="mt-2 text-sm text-gray-500">{message}</p>
+            <p className="mt-2 text-sm text-gray-500" role="status" aria-live="polite">{message}</p>
             <Link to="/login">
               <Button className="mt-6 w-full">Go to login</Button>
             </Link>
@@ -96,7 +106,7 @@ export default function VerifyEmailPage() {
               </div>
             </div>
             <h1 className="text-xl font-semibold text-gray-900">Verification failed</h1>
-            <p className="mt-2 text-sm text-gray-500">{message}</p>
+            <p className="mt-2 text-sm text-gray-500" role="alert">{message}</p>
             <Link to="/register">
               <Button variant="secondary" className="mt-6 w-full">Back to registration</Button>
             </Link>

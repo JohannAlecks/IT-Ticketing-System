@@ -4,6 +4,8 @@ const AppError = require('../../utils/AppError');
 const { signToken } = require('../../utils/jwt');
 const { generateSecureToken, hashToken } = require('../../utils/token');
 const { sendMail } = require('../../utils/mailer');
+const { buildVerificationEmail } = require('../../utils/verificationEmail');
+const { recordAudit } = require('../audit/audit.service');
 const env = require('../../config/env');
 
 const SALT_ROUNDS = 12;
@@ -14,45 +16,88 @@ const SALT_ROUNDS = 12;
 const RESEND_GENERIC_MESSAGE =
   'If an eligible account exists, a verification email may be sent when email delivery is available.';
 
-function verificationEmailContent(user, rawToken) {
-  const link = `${env.CLIENT_URL}/verify-email?token=${rawToken}`;
+function resendGenericResult() {
   return {
-    to: user.email,
-    subject: 'Verify your HelpDesk account',
-    text: `Hi ${user.name},\n\nPlease verify your email address by clicking the link below:\n${link}\n\nThis link expires in ${env.EMAIL_VERIFICATION_TOKEN_TTL_HOURS} hours and can only be used once.\n\nIf you didn't create this account, you can ignore this email.`,
+    message: RESEND_GENERIC_MESSAGE,
+    retryAfterSeconds: env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS,
   };
 }
 
-// Deletes any existing unused token for this user, then creates a fresh
-// one and emails it. Reused by both registration and resend so there's
-// only ever one active (unused, unexpired) token per user at a time.
-async function issueVerificationToken(user) {
-  await prisma.emailVerificationToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+function deliveryStatus(result) {
+  return ['accepted', 'unavailable', 'failed'].includes(result?.status) ? result.status : 'failed';
+}
 
+// Database mutations are completed before any provider call. This lets a
+// failed or disabled provider leave an unverified account with a usable,
+// safely hashed verification token for a later resend.
+async function createVerificationToken(tx, user) {
+  await tx.emailVerificationToken.deleteMany({ where: { userId: user.id, usedAt: null } });
   const rawToken = generateSecureToken();
   const expiresAt = new Date(Date.now() + env.EMAIL_VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000);
-
-  await prisma.emailVerificationToken.create({
+  const record = await tx.emailVerificationToken.create({
     data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt },
   });
+  return { rawToken, record };
+}
 
-  return sendMail(verificationEmailContent(user, rawToken));
+async function deliverVerificationEmail(user, issued) {
+  try {
+    const result = await sendMail({
+      ...buildVerificationEmail(user, issued.rawToken),
+      idempotencyKey: `verify-email/${issued.record.id}`.slice(0, 256),
+    });
+    return { status: deliveryStatus(result) };
+  } catch {
+    return { status: 'failed' };
+  }
+}
+
+async function issueVerificationToken(user) {
+  let issued;
+  try {
+    issued = await prisma.$transaction(async (tx) => {
+      // Lock the account row before checking eligibility/cooldown and rotating.
+      // Concurrent resends then serialize across app instances, so a later
+      // request cannot invalidate a token after its provider call has begun.
+      const eligible = await tx.$queryRaw`
+        SELECT id FROM users
+        WHERE id = ${user.id} AND "emailVerified" = false AND "isActive" = true
+        FOR UPDATE
+      `;
+      if (eligible.length !== 1) return null;
+
+      const lastToken = await tx.emailVerificationToken.findFirst({
+        where: { userId: user.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (lastToken) {
+        const cooldownMs = env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+        if (Date.now() - lastToken.createdAt.getTime() < cooldownMs) return null;
+      }
+      return createVerificationToken(tx, user);
+    });
+  } catch (error) {
+    // A deadlock/serialization loser must not leak account state or submit a
+    // provider request. The caller returns the normal generic response.
+    if (error?.code === 'P2034') return null;
+    throw error;
+  }
+  if (!issued) return null;
+  return deliverVerificationEmail(user, issued);
 }
 
 async function register({ name, email, password }) {
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    throw new AppError('An account with this email already exists', 409);
-  }
-
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-
-  const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, role: 'USER', emailVerified: false },
-    select: { id: true, name: true, email: true, role: true, department: true, createdAt: true },
+  const { user, issued } = await prisma.$transaction(async (tx) => {
+    const existing = await tx.user.findUnique({ where: { email } });
+    if (existing) throw new AppError('An account with this email already exists', 409);
+    const createdUser = await tx.user.create({
+      data: { name, email, password: hashedPassword, role: 'USER', emailVerified: false },
+      select: { id: true, name: true, email: true, role: true, department: true, createdAt: true },
+    });
+    return { user: createdUser, issued: await createVerificationToken(tx, createdUser) };
   });
-
-  const delivery = await issueVerificationToken(user);
+  const delivery = await deliverVerificationEmail(user, issued);
 
   // Deliberately NOT returning a JWT here — an unverified account must not
   // be able to reach the application. See login() for the enforcement side.
@@ -135,32 +180,34 @@ async function verifyEmail(rawToken, requestId) {
   });
 }
 
-async function resendVerification(email) {
-  const user = await prisma.user.findUnique({ where: { email } });
+async function resendVerification(email, requestId) {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, name: true, email: true, emailVerified: true, isActive: true },
+  });
 
   // Silently no-op for: no such user, already verified, or inactive
   // account — the response is identical either way (see
   // RESEND_GENERIC_MESSAGE) so this can't be used to enumerate accounts.
   if (!user || user.emailVerified || !user.isActive) {
-    return { message: RESEND_GENERIC_MESSAGE };
+    return resendGenericResult();
   }
 
-  const lastToken = await prisma.emailVerificationToken.findFirst({
-    where: { userId: user.id },
-    orderBy: { createdAt: 'desc' },
+  const delivery = await issueVerificationToken(user);
+  if (!delivery) return resendGenericResult();
+  // This deliberately runs after mail submission and catches its own errors;
+  // it only records the safe delivery state, never email, token, content, or URL.
+  void recordAudit({
+    eventType: 'auth.email_verification_requested',
+    entityType: 'user',
+    entityId: user.id,
+    // The resend route is intentionally unauthenticated; do not attribute
+    // the request to the target account merely because its email matched.
+    actorUserId: null,
+    requestId,
+    metadata: { deliveryStatus: delivery.status },
   });
-
-  if (lastToken) {
-    const cooldownMs = env.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
-    const elapsedMs = Date.now() - lastToken.createdAt.getTime();
-    if (elapsedMs < cooldownMs) {
-      const waitSeconds = Math.ceil((cooldownMs - elapsedMs) / 1000);
-      throw new AppError(`Please wait ${waitSeconds}s before requesting another verification email.`, 429);
-    }
-  }
-
-  await issueVerificationToken(user);
-  return { message: RESEND_GENERIC_MESSAGE };
+  return resendGenericResult();
 }
 
 async function getProfile(userId) {
@@ -172,4 +219,4 @@ async function getProfile(userId) {
   return user;
 }
 
-module.exports = { register, login, verifyEmail, resendVerification, getProfile };
+module.exports = { register, login, verifyEmail, resendVerification, getProfile, createVerificationToken, deliverVerificationEmail };

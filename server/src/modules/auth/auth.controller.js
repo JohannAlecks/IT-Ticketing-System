@@ -9,9 +9,12 @@ const register = asyncHandler(async (req, res) => {
     success: true,
     data: {
       email,
-      message: delivery.delivered
-        ? 'Account created. Please check your email to verify your account.'
-        : 'Account created. Email verification is required, but delivery is not configured in this environment.',
+      delivery: { status: delivery.status },
+      message: delivery.status === 'accepted'
+        ? 'Account created. Your verification email request was accepted by the email service; please check your inbox.'
+        : delivery.status === 'unavailable'
+          ? 'Account created. Email verification is required, but delivery is disabled in this environment.'
+          : 'Account created. The verification email request failed; you may use resend verification later.',
     },
   });
 });
@@ -28,7 +31,7 @@ const verifyEmail = asyncHandler(async (req, res) => {
 });
 
 const resendVerification = asyncHandler(async (req, res) => {
-  const result = await authService.resendVerification(req.body.email);
+  const result = await authService.resendVerification(req.body.email, req.requestId);
   res.status(200).json({ success: true, data: result });
 });
 

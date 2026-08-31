@@ -26,7 +26,14 @@ export default function RegisterPage() {
       // UNVERIFIED — no token is issued, so there's nothing to log in with
       // yet. Route to the check-email screen instead.
       const result = await register(form);
-      navigate('/check-email', { replace: true, state: { email: result.email, message: result.message } });
+      navigate('/check-email', {
+        replace: true,
+        state: {
+          email: result.email,
+          delivery: result.delivery,
+          message: result.message,
+        },
+      });
     } catch (err) {
       const details = err.response?.data?.details;
       if (details) {

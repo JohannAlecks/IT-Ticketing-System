@@ -12,6 +12,6 @@ async function changeMyPassword(userId, { currentPassword, newPassword }) {
   if (!user || !(await bcrypt.compare(currentPassword, user.password))) throw new AppError('Your current password is incorrect', 422);
   await prisma.user.update({ where: { id: userId }, data: { password: await bcrypt.hash(newPassword, 12) } });
 }
-function getSystemInfo() { return { environment: env.NODE_ENV, jwtExpiresIn: env.JWT_EXPIRES_IN, attachmentProvider: env.STORAGE_PROVIDER, maxAttachmentSizeMb: env.MAX_ATTACHMENT_SIZE_MB, emailDeliveryConfigured: Boolean(env.EMAIL_PROVIDER) }; }
+function getSystemInfo() { return { environment: env.NODE_ENV, jwtExpiresIn: env.JWT_EXPIRES_IN, attachmentProvider: env.STORAGE_PROVIDER, maxAttachmentSizeMb: env.MAX_ATTACHMENT_SIZE_MB, emailDeliveryConfigured: env.EMAIL_PROVIDER === 'resend' }; }
 
 module.exports = { getMySettings, updateMyProfile, changeMyPassword, getSystemInfo };

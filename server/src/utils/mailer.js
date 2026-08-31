@@ -1,51 +1,44 @@
+const { Resend } = require('resend');
 const env = require('../config/env');
 
-/**
- * Email sending abstraction — see README "Email Verification" section for
- * full context. THIS PROJECT HAS NO EMAIL PROVIDER CONFIGURED.
- *
- * No email-sending package (nodemailer, @sendgrid/mail, resend, etc.) has
- * been installed, and no SMTP/API credentials exist in .env.example. This
- * was a deliberate choice, not an oversight: introducing a specific
- * provider is a decision (SMTP vs. a transactional API, which vendor,
- * which npm package) that belongs to whoever owns the production
- * deployment, not something to guess at.
- *
- * What THIS file does instead: expose a single `sendMail()` function with
- * the exact interface a real provider integration would use, so swapping in
- * real delivery later is isolated. It intentionally never logs message
- * content, recipients, verification URLs, or raw tokens.
- *
- * TO WIRE UP A REAL PROVIDER:
- * 1. Pick one (e.g. nodemailer+SMTP, Resend, SendGrid, AWS SES) and
- *    `npm install` the relevant package in server/.
- * 2. Add its credentials to deployment-only configuration — never commit
- *    real credentials.
- * 3. Replace the body of `sendMail()` below with a real API/SMTP call.
- *    Every caller (auth.service.js) is already written against this
- *    function's signature and does not need to change.
- */
-async function sendMail({ to, subject, html, text }) {
-  // Keep the future provider interface explicit while deliberately avoiding
-  // any diagnostics that could disclose a verification URL or token.
-  void to;
-  void subject;
-  void html;
-  void text;
+const RESEND_API_URL = 'https://api.resend.com';
 
-  const providerConfigured = Boolean(env.EMAIL_PROVIDER);
+function withTimeout(operation, milliseconds) {
+  let timeout;
+  const controller = new AbortController();
+  return new Promise((resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error('email delivery timed out'));
+    }, milliseconds);
+    Promise.resolve().then(() => operation(controller.signal)).then(
+      (value) => { clearTimeout(timeout); resolve(value); },
+      (error) => { clearTimeout(timeout); reject(error); }
+    );
+  });
+}
 
-  if (!providerConfigured) {
-    // eslint-disable-next-line no-console
-    console.warn('Email delivery is not configured; the verification message was not sent.');
-    return { delivered: false, attempted: false, reason: 'no_provider_configured' };
+// Public facade: callers receive only a safe, status-level delivery result.
+async function sendMail({ to, subject, html, text, idempotencyKey }) {
+  if (env.EMAIL_PROVIDER === 'disabled') return { status: 'unavailable' };
+  try {
+    // Pin the official endpoint so ambient SDK-specific environment values
+    // cannot redirect a credential. The SDK otherwise logs provider details
+    // outside production, so replace that diagnostic with the app's safe status.
+    const resend = new Resend(env.RESEND_API_KEY, { baseUrl: RESEND_API_URL });
+    resend.logError = () => {};
+    const response = await withTimeout(
+      (signal) => resend.emails.send({
+        from: env.EMAIL_FROM, to, subject, html, text,
+        ...(env.EMAIL_REPLY_TO ? { replyTo: env.EMAIL_REPLY_TO } : {}),
+      }, { idempotencyKey, signal }),
+      env.EMAIL_DELIVERY_TIMEOUT_MS
+    );
+    if (response?.error || !response?.data?.id) return { status: 'failed' };
+    return { status: 'accepted' };
+  } catch {
+    return { status: 'failed' };
   }
-
-  // No provider is currently wired up, so this branch is intentionally
-  // unreachable until EMAIL_PROVIDER is set AND the real implementation
-  // below is written in for that provider. Throwing here (rather than
-  // silently pretending to succeed) is deliberate: see the class comment.
-  throw new Error('Email delivery provider is configured but unsupported: no provider integration has been implemented.');
 }
 
 module.exports = { sendMail };

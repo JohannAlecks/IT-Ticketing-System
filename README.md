@@ -307,20 +307,91 @@ download, and deletion is checked against the ticket's server-side authorization
 S3-compatible provider only after adding and testing its credentials and provider
 adapter.
 
-### Email verification and safe local workflow
+### Email verification with Resend
 
-No email provider is installed, selected, or configured by this project. In development,
-leaving `EMAIL_PROVIDER` unset is intentional: the server records a hashed verification
-token but does not send an email and never logs the raw token or verification URL. The
-registration and resend responses therefore do not claim that delivery occurred. Use the
-seeded Admin, Agent, and User accounts above for local development; they are already
-verified by the existing schema default.
+Email verification has two explicit delivery modes:
 
-Production startup is intentionally blocked whether `EMAIL_PROVIDER` is unset or merely
-configured, because no production provider adapter has been implemented. The deployment
-owner must choose, implement, and test a provider before enabling public registration in
-production. Do not place provider credentials in `.env.example`, source control, logs,
-or tests.
+- `EMAIL_PROVIDER=disabled` is the safe local/default mode. Accounts can be created but
+  no verification email is sent, so use the already-verified seed accounts for local UI
+  work.
+- `EMAIL_PROVIDER=resend` enables Resend delivery only after the deployment operator has
+  configured the required production settings below.
+
+The server fails closed in production: public registration must not run with delivery
+disabled, missing credentials, an invalid sender, or a non-public/non-HTTPS client URL.
+Do not treat a registration status of `accepted` as inbox delivery. It means Resend
+accepted the provider request; the recipient may still receive it late, in spam, or not
+at all. The client deliberately presents `accepted`, `unavailable`, and `failed` as
+different states. Resend requests always use the same generic response, so that response
+does not prove delivery or reveal whether an account exists.
+
+Configure production secrets in the deployment platform rather than source control:
+
+```env
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=deployment-only-secret
+EMAIL_FROM=HelpDesk <support@mail.example.com>
+EMAIL_REPLY_TO=help@example.com
+EMAIL_SUPPORT=help@example.com
+EMAIL_APP_NAME=HelpDesk
+EMAIL_DELIVERY_TIMEOUT_MS=10000
+EMAIL_VERIFICATION_TOKEN_TTL_HOURS=24
+EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS=60
+CLIENT_URL=https://app.example.com
+```
+
+`RESEND_API_KEY` is created and maintained by the operator in their Resend account; this
+project does not create a Resend account or key. Store it only in the deployment secret
+manager, give it the least privilege required for this sender, limit access to the
+smallest operations group, and rotate it immediately after suspected exposure and on a
+defined operational schedule. Never put it in `.env.example`, a client `VITE_*` variable,
+source control, logs, tests, or tickets.
+
+`EMAIL_FROM` uses standard display-name sender syntax (`HelpDesk <address@domain>`). Its
+domain must be owned by the operator and aligned with the domain verified in Resend.
+Use a dedicated sending subdomain such as `mail.example.com` where practical, then add
+and verify the SPF and DKIM DNS records Resend provides before enabling production
+delivery. DNS changes can take time to propagate; wait for Resend to show the domain as
+verified before deployment. `EMAIL_REPLY_TO` and `EMAIL_SUPPORT` are optional, but should
+be monitored support addresses when supplied. `CLIENT_URL` must be the public HTTPS URL
+of the client because verification links are sent to that origin; keep it aligned with
+`CORS_ORIGINS`.
+
+For development and controlled testing, understand Resend's restrictions: the shared
+`resend.dev` sender can send only to the Resend account owner's address, and Resend test
+recipient addresses simulate delivery outcomes. Those facilities are useful for tests,
+but they are not proof that a production sending domain or recipient path works.
+
+#### Email deployment checklist
+
+- Create/configure the Resend account and a least-privilege API key in the deployment
+  secret manager.
+- Verify an operator-owned sending domain (preferably a sending subdomain) and its SPF/
+  DKIM records; wait for DNS propagation and Resend verification.
+- Set `EMAIL_PROVIDER=resend`, a domain-aligned `EMAIL_FROM`, required `CLIENT_URL=https://…`,
+  and matching `CORS_ORIGINS` in the production environment.
+- Set optional reply-to/support addresses only if those inboxes are monitored.
+- Deploy, register a controlled test account, and confirm the UI only calls the provider
+  response `accepted`—not a delivery guarantee.
+- Monitor provider failures/timeouts and rotate the API key according to the operator's
+  secret-management policy.
+
+#### Email troubleshooting
+
+- **401 or 403 from Resend:** verify the API key is present in the server environment,
+  active, scoped appropriately, and belongs to the intended Resend account. Rotate a
+  suspected or revoked key instead of reusing it.
+- **Domain/sender mismatch:** ensure the `EMAIL_FROM` address uses the Resend-verified,
+  operator-owned domain and that SPF/DKIM DNS verification has completed.
+- **Timeout:** verify outbound network access to Resend, inspect deployment logs without
+  exposing recipients or tokens, and tune `EMAIL_DELIVERY_TIMEOUT_MS` only with a known
+  network reason.
+- **Rate limiting:** respect the verification resend cooldown and API rate limits. The
+  generic resend response intentionally does not disclose account state or delivery.
+
+This implementation did not create a Resend account or domain, configure live
+credentials, deploy the application, or send real email. Those are deliberate operator
+actions required before production use.
 
 ### Verification run
 
