@@ -20,6 +20,8 @@ describe('Sidebar dashboard navigation', () => {
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'My Reports' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Knowledge Base' })).toHaveAttribute('href', '/knowledge');
+    expect(screen.queryByRole('link', { name: 'Manage Knowledge' })).not.toBeInTheDocument();
   });
 
   it.each([
@@ -31,5 +33,6 @@ describe('Sidebar dashboard navigation', () => {
 
     expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', '/reports');
     expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute('href', '/dashboard');
+    expect(screen.getByRole('link', { name: 'Manage Knowledge' })).toHaveAttribute('href', '/knowledge/manage');
   });
 });

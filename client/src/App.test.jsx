@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 const authState = vi.hoisted(() => ({
@@ -38,6 +38,8 @@ beforeEach(() => {
   authState.role = 'USER';
 });
 
+afterEach(cleanup);
+
 describe('reports route guard', () => {
   it('redirects an authenticated USER from /reports to /dashboard', async () => {
     render(<MemoryRouter initialEntries={['/reports']}><App /><LocationProbe /></MemoryRouter>);
@@ -45,5 +47,9 @@ describe('reports route guard', () => {
     expect(await screen.findByTestId('location')).toHaveTextContent('/dashboard');
     expect(screen.queryByRole('heading', { name: 'My Reports' })).not.toBeInTheDocument();
   });
-});
 
+  it('redirects an authenticated USER from Knowledge management while keeping reading routes available', async () => {
+    render(<MemoryRouter initialEntries={['/knowledge/manage']}><App /><LocationProbe /></MemoryRouter>);
+    expect(await screen.findByTestId('location')).toHaveTextContent('/dashboard');
+  });
+});

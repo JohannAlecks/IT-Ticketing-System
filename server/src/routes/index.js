@@ -9,5 +9,6 @@ router.use('/reports', require('../modules/reports/report.routes'));
 router.use('/audit-events', require('../modules/audit/audit.routes'));
 router.use('/settings', require('../modules/settings/settings.routes'));
 router.use('/onboarding', require('../modules/onboarding/onboarding.routes'));
+router.use('/knowledge', require('../modules/knowledge/knowledge.routes'));
 
 module.exports = router;

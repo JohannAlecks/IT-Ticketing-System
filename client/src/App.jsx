@@ -18,6 +18,10 @@ import NotFoundPage from './pages/NotFoundPage';
 import AuditLogPage from './pages/AuditLogPage';
 import GetStartedPage from './pages/GetStartedPage';
 import ReportsPage from './pages/ReportsPage';
+import KnowledgePage from './pages/KnowledgePage';
+import KnowledgeArticlePage from './pages/KnowledgeArticlePage';
+import KnowledgeManagePage from './pages/KnowledgeManagePage';
+import KnowledgeEditorPage from './pages/KnowledgeEditorPage';
 
 export default function App() {
   return (
@@ -38,10 +42,15 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/get-started" element={<GetStartedPage />} />
+          <Route path="/knowledge" element={<KnowledgePage />} />
+          <Route path="/knowledge/:slug" element={<KnowledgeArticlePage />} />
 
           {/* Agent and admin reporting; the existing guard redirects USERs. */}
           <Route element={<ProtectedRoute roles={['AGENT', 'ADMIN']} />}>
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/knowledge/manage" element={<KnowledgeManagePage />} />
+            <Route path="/knowledge/new" element={<KnowledgeEditorPage />} />
+            <Route path="/knowledge/:id/edit" element={<KnowledgeEditorPage />} />
           </Route>
 
           {/* Agent-only */}

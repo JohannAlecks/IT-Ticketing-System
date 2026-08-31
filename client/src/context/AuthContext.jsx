@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const previousUserId = useRef(null);
+  const previousIdentity = useRef(null);
   const sessionGeneration = useRef(0);
   const restoreController = useRef(null);
 
@@ -18,17 +18,24 @@ export function AuthProvider({ children }) {
     restoreController.current?.abort();
     restoreController.current = null;
     localStorage.removeItem('token');
-    previousUserId.current = null;
+    previousIdentity.current = null;
     void clearProtectedCache(queryClient);
     setUser(null);
     setIsLoading(false);
   }, [queryClient]);
 
   const setAuthenticatedUser = useCallback(async (nextUser) => {
-    if (previousUserId.current && previousUserId.current !== nextUser?.id) {
+    const nextIdentity = nextUser?.id ? {
+      id: nextUser.id,
+      role: String(nextUser.role || '').toUpperCase(),
+    } : null;
+    if (previousIdentity.current && (
+      previousIdentity.current.id !== nextIdentity?.id ||
+      previousIdentity.current.role !== nextIdentity?.role
+    )) {
       await clearProtectedCache(queryClient);
     }
-    previousUserId.current = nextUser?.id ?? null;
+    previousIdentity.current = nextIdentity;
     setUser(nextUser);
   }, [queryClient]);
 

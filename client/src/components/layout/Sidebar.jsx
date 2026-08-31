@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, User, LifeBuoy, ClipboardList, ScrollText, X, Sparkles, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Ticket, PlusCircle, Users, Settings, User, LifeBuoy, ClipboardList, ScrollText, X, Sparkles, BarChart3, BookOpen, LibraryBig } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const linkClass = ({ isActive }) =>
@@ -46,6 +46,14 @@ export default function Sidebar({ mobileOpen, onClose }) {
         <NavLink to="/tickets/new" className={linkClass}>
           <PlusCircle className="h-[18px] w-[18px]" /> New Ticket
         </NavLink>
+        <NavLink to="/knowledge" className={linkClass}>
+          <BookOpen className="h-[18px] w-[18px]" /> Knowledge Base
+        </NavLink>
+        {(role === 'AGENT' || role === 'ADMIN') && (
+          <NavLink to="/knowledge/manage" className={linkClass}>
+            <LibraryBig className="h-[18px] w-[18px]" /> Manage Knowledge
+          </NavLink>
+        )}
         {(role === 'AGENT' || role === 'ADMIN') && (
           <NavLink to="/reports" className={linkClass}>
             <BarChart3 className="h-[18px] w-[18px]" /> {role === 'AGENT' ? 'My Reports' : 'Reports'}

@@ -139,19 +139,20 @@ describe('ReportsPage', () => {
   it('rejects invalid, reversed, and overlong custom ranges without applying them', () => {
     renderPage();
     const initialCallCount = reportsState.observedFilters.length;
+    const initialFrom = getQuickRange(30).from;
 
     fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
     fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2026-08-31' } });
     fireEvent.change(screen.getByLabelText('To date'), { target: { value: '2026-08-01' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
     expect(screen.getByRole('alert')).toHaveTextContent('start date must be on or before');
-    expect(reportsState.observedFilters.at(-1).from).toBe('2026-08-01');
+    expect(reportsState.observedFilters.at(-1).from).toBe(initialFrom);
 
     fireEvent.change(screen.getByLabelText('From date'), { target: { value: '2025-01-01' } });
     fireEvent.change(screen.getByLabelText('To date'), { target: { value: '2026-08-30' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply Filters' }));
     expect(screen.getByRole('alert')).toHaveTextContent('366 calendar days or fewer');
-    expect(reportsState.observedFilters.at(-1).from).toBe('2026-08-01');
+    expect(reportsState.observedFilters.at(-1).from).toBe(initialFrom);
     expect(reportsState.observedFilters.length).toBeGreaterThanOrEqual(initialCallCount);
   });
 

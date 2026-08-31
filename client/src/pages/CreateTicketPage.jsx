@@ -7,6 +7,13 @@ import Button from '../components/ui/Button';
 import { useCreateTicket } from '../hooks/useTickets';
 import { categoryDescriptionGuidance, categorySuggestions, hasCredentialWarning, ticketCategories } from '../constants/ticketCategories';
 import { useAuth } from '../context/AuthContext';
+import { useKnowledgeSuggestions } from '../hooks/useKnowledge';
+
+function usefulSuggestionTerm(title) {
+  const term = title.trim().replace(/\s+/g, ' ');
+  if (term.length < 8 || term.split(' ').length < 2) return undefined;
+  return term.slice(0, 80);
+}
 
 const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
@@ -24,6 +31,8 @@ export default function CreateTicketPage() {
     impactDescription: '',
   });
   const [errors, setErrors] = useState({});
+  const suggestionTerm = usefulSuggestionTerm(form.title);
+  const knowledgeSuggestions = useKnowledgeSuggestions({ category: form.category, search: suggestionTerm, limit: 3 });
 
   const handleChange = (e) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
@@ -64,6 +73,8 @@ export default function CreateTicketPage() {
           onChange={handleChange}
           error={errors.title}
         />
+        {knowledgeSuggestions.data?.length > 0 && <section aria-labelledby="knowledge-suggestions" className="rounded-xl border border-brand-100 bg-brand-50/40 p-3"><h2 id="knowledge-suggestions" className="text-sm font-semibold text-slate-800">Helpful Knowledge Base articles</h2><ul className="mt-2 space-y-1.5">{knowledgeSuggestions.data.map((article) => <li key={article.id}><a className="text-sm font-medium text-brand-700 underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500" href={`/knowledge/${article.slug}`} target="_blank" rel="noopener noreferrer">{article.title}</a>{canTriage && article.visibility === 'INTERNAL' && <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-800">Internal</span>}</li>)}</ul></section>}
+        {knowledgeSuggestions.isSuccess && knowledgeSuggestions.data?.length === 0 && <p role="status" className="text-sm text-slate-500">No related Knowledge Base articles found for this category.</p>}
         <Textarea
           label="Description"
           id="description"

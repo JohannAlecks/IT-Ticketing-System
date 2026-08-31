@@ -59,6 +59,18 @@ enum ActivityAction {
   ATTACHMENT_DELETED
 }
 
+enum KnowledgeArticleStatus {
+  DRAFT
+  IN_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KnowledgeVisibility {
+  PUBLIC
+  INTERNAL
+}
+
 // ─────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────
@@ -79,14 +91,17 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  ticketsCreated     Ticket[]                 @relation("TicketCreatedBy")
-  ticketsAssigned    Ticket[]                 @relation("TicketAssignedTo")
-  comments           Comment[]
-  activities         TicketHistory[]
-  attachments        TicketAttachment[]
-  verificationTokens EmailVerificationToken[]
-  auditEvents        AuditEvent[]
-  onboarding         UserOnboarding?
+  ticketsCreated            Ticket[]                 @relation("TicketCreatedBy")
+  ticketsAssigned           Ticket[]                 @relation("TicketAssignedTo")
+  comments                  Comment[]
+  activities                TicketHistory[]
+  attachments               TicketAttachment[]
+  verificationTokens        EmailVerificationToken[]
+  auditEvents               AuditEvent[]
+  onboarding                UserOnboarding?
+  knowledgeArticlesAuthored KnowledgeArticle[]       @relation("KnowledgeArticleAuthor")
+  knowledgeArticlesReviewed KnowledgeArticle[]       @relation("KnowledgeArticleReviewer")
+  articleFeedback           ArticleFeedback[]        @relation("ArticleFeedbackUser")
 
   @@index([email])
   @@index([role])
@@ -245,4 +260,50 @@ model EmailVerificationToken {
   @@index([userId])
   @@index([tokenHash])
   @@map("email_verification_tokens")
+}
+
+model KnowledgeArticle {
+  id             String                 @id @default(uuid())
+  title          String                 @db.VarChar(150)
+  slug           String                 @unique @db.VarChar(180)
+  summary        String                 @db.VarChar(300)
+  content        String                 @db.Text
+  status         KnowledgeArticleStatus @default(DRAFT)
+  visibility     KnowledgeVisibility    @default(INTERNAL)
+  ticketCategory TicketCategory         @default(OTHERS)
+  tags           String[]               @default([])
+  reviewNote     String?                @db.VarChar(1000)
+  version        Int                    @default(1)
+
+  authorId     String?
+  author       User?   @relation("KnowledgeArticleAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  reviewedById String?
+  reviewedBy   User?   @relation("KnowledgeArticleReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  feedback ArticleFeedback[] @relation("KnowledgeArticleFeedback")
+
+  @@index([status, visibility, publishedAt])
+  @@index([ticketCategory, status, visibility])
+  @@index([authorId, status, updatedAt])
+  @@map("knowledge_articles")
+}
+
+model ArticleFeedback {
+  id        String           @id @default(uuid())
+  articleId String
+  article   KnowledgeArticle @relation("KnowledgeArticleFeedback", fields: [articleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation("ArticleFeedbackUser", fields: [userId], references: [id], onDelete: Cascade)
+  helpful   Boolean
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([articleId, userId])
+  @@index([articleId, helpful])
+  @@map("article_feedback")
 }

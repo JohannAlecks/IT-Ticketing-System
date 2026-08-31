@@ -52,6 +52,21 @@ describe('AuthProvider protected cache cleanup', () => {
     expect(client.getQueryData(protectedQueryKeys.ticket('account-a', 'ticket-1'))).toBeUndefined();
   });
 
+  it('clears protected data when the same account receives a different role', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    localStorage.setItem('token', 'token-a');
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'USER' });
+    const { result } = renderAuth(client);
+    await waitFor(() => expect(result.current.user?.role).toBe('USER'));
+    client.setQueryData(protectedQueryKeys.knowledge('account-a', 'USER'), { articles: [{ title: 'Public only' }] });
+    client.setQueryData(['public', 'categories'], ['Hardware']);
+
+    await act(async () => { await result.current.updateUser({ id: 'account-a', role: 'ADMIN' }); });
+
+    expect(client.getQueryData(protectedQueryKeys.knowledge('account-a', 'USER'))).toBeUndefined();
+    expect(client.getQueryData(['public', 'categories'])).toEqual(['Hardware']);
+  });
+
   it('does not restore a late /auth/me result after a forced logout', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     let resolveRestore;

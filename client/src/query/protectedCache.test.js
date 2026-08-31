@@ -14,6 +14,7 @@ describe('protected cache ownership', () => {
     client.setQueryData(protectedQueryKeys.ticket('account-b', 'ticket-1'), { owner: 'b' });
     client.setQueryData([...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary', { from: '2026-08-01', to: '2026-08-30' }], { owner: 'a' });
     client.setQueryData([...protectedQueryKeys.reports('account-b'), 'ADMIN', 'tickets', { page: 1 }], { owner: 'b' });
+    client.setQueryData([...protectedQueryKeys.knowledge('account-a', 'USER'), 'detail', 'safe-guide'], { owner: 'a' });
     client.setQueryData(['public', 'categories'], ['Hardware']);
     client.getMutationCache().build(client, {
       mutationKey: protectedMutationKeys.ticket('account-a', 'update', 'ticket-1'),
@@ -26,6 +27,7 @@ describe('protected cache ownership', () => {
     expect(client.getQueryData(protectedQueryKeys.ticket('account-b', 'ticket-1'))).toBeUndefined();
     expect(client.getQueryData([...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary', { from: '2026-08-01', to: '2026-08-30' }])).toBeUndefined();
     expect(client.getQueryData([...protectedQueryKeys.reports('account-b'), 'ADMIN', 'tickets', { page: 1 }])).toBeUndefined();
+    expect(client.getQueryData([...protectedQueryKeys.knowledge('account-a', 'USER'), 'detail', 'safe-guide'])).toBeUndefined();
     expect(client.getQueryData(['public', 'categories'])).toEqual(['Hardware']);
     expect(client.getMutationCache().findAll({ mutationKey: protectedMutationKeys.ticket('account-a', 'update', 'ticket-1') })).toHaveLength(0);
   });
@@ -48,6 +50,11 @@ describe('protected cache ownership', () => {
       'tickets',
       { page: 1 },
     ]);
+  });
+
+  it('separates Knowledge cache roots by role as well as account', () => {
+    expect(protectedQueryKeys.knowledge('account-a', 'user')).toEqual(['protected', 'account-a', 'knowledge', 'USER']);
+    expect(protectedQueryKeys.knowledge('account-a', 'ADMIN')).toEqual(['protected', 'account-a', 'knowledge', 'ADMIN']);
   });
 
   it('aborts and removes an in-flight protected query', async () => {
