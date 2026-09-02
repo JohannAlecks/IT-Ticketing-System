@@ -79,6 +79,9 @@ describeDb(`user lifecycle routes (${skipReason})`, () => {
       await prisma.ticket.deleteMany({ where: { id: { in: createdTicketIds } } });
     }
     if (createdUserIds.length) {
+      await prisma.notification.deleteMany({
+        where: { OR: [{ recipientId: { in: createdUserIds } }, { actorId: { in: createdUserIds } }] },
+      });
       await prisma.auditEvent.deleteMany({ where: { entityId: { in: createdUserIds } } });
       await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     }

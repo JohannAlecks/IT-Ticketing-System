@@ -92,3 +92,8 @@ html[data-theme='dark'] .bg-white.hover\:bg-slate-50:hover,
 html[data-theme='dark'] .hover\:bg-slate-50:hover,
 html[data-theme='dark'] .hover\:bg-slate-100:hover { background-color: #1e2d40; }
 html[data-theme='dark'] .hover\:bg-brand-50\/40:hover { background-color: rgb(52 195 143 / 10%); }
+
+/* Notification surfaces also use these semantic names for dropdown/page
+   interiors, so the panel cannot fall back to a bright white card in dark mode. */
+html[data-theme='dark'] .notification-panel,
+html[data-theme='dark'] .notification-item { background-color: #152131; border-color: #263548; }

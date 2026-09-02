@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
+const { writeNotifications, eventEntry } = require('../notifications/notification.service');
 
 const ARTICLE_ENTITY = 'knowledge_article';
 const STAFF_ROLES = new Set(['AGENT', 'ADMIN']);
@@ -193,6 +194,21 @@ async function transitionArticle(user, id, { from, to, version, data = {}, event
     const result = await tx.knowledgeArticle.updateMany({ where, data: nextData });
     if (!result.count) throw new AppError('Knowledge article was changed or is no longer in the required state', 409);
     await tx.auditEvent.create({ data: { eventType, entityType: ARTICLE_ENTITY, entityId: id, actorUserId: user.id, requestId, metadata: auditMetadata } });
+    if (to === 'IN_REVIEW') {
+      const admins = await tx.user.findMany({ where: { role: 'ADMIN', isActive: true }, select: { id: true } });
+      await writeNotifications(tx, {
+        actorId: user.id,
+        entries: admins.map((admin) => eventEntry({ recipientId: admin.id, type: 'KNOWLEDGE_SUBMITTED', articleId: id, title: 'Knowledge review requested', message: 'A knowledge article is ready for review.', eventId: `${id}:${version + 1}` })),
+      });
+    } else if (to === 'PUBLISHED' || (from === 'IN_REVIEW' && to === 'DRAFT')) {
+      if (current.authorId) {
+        const type = to === 'PUBLISHED' ? 'KNOWLEDGE_PUBLISHED' : 'KNOWLEDGE_RETURNED';
+        await writeNotifications(tx, {
+          actorId: user.id,
+          entries: [eventEntry({ recipientId: current.authorId, type, articleId: id, title: to === 'PUBLISHED' ? 'Knowledge article published' : 'Knowledge article returned', message: to === 'PUBLISHED' ? 'Your knowledge article was published.' : 'Your knowledge article was returned for updates.', eventId: `${id}:${version + 1}` })],
+        });
+      }
+    }
     return tx.knowledgeArticle.findUnique({ where: { id }, select: managementSelect });
   });
 }

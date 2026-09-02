@@ -20,7 +20,9 @@ jest.mock('../../../config/prisma', () => ({
   },
   user: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
   },
+  notification: { createMany: jest.fn() },
   ticketHistory: {
     create: jest.fn(),
     createMany: jest.fn(),
@@ -53,6 +55,8 @@ function baseTicket(overrides = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 
 describe('getTicketById — visibility', () => {
@@ -263,6 +267,39 @@ describe('assignTicket — assignment authorization', () => {
     mockPrisma.ticket.updateMany.mockResolvedValue({ count: 0 });
     await expect(ticketService.assignTicket('ticket-1', AGENT_A.id, AGENT_A)).rejects.toMatchObject({ statusCode: 409 });
     expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('ticket notification events', () => {
+  test('reassignment writes assigned and unassigned inbox entries after history, excluding the actor', async () => {
+    const before = baseTicket({ assignedToId: AGENT_A.id, updatedAt: new Date('2026-09-01T00:00:00.000Z') });
+    const after = { ...before, assignedToId: AGENT_B.id, assignedTo: AGENT_B, updatedAt: new Date('2026-09-01T00:01:00.000Z') };
+    mockPrisma.ticket.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+    mockPrisma.user.findUnique.mockResolvedValue(AGENT_B);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: AGENT_A.id }, { id: AGENT_B.id }]);
+    await ticketService.assignTicket('ticket-1', AGENT_B.id, ADMIN);
+    expect(mockPrisma.ticketHistory.create.mock.invocationCallOrder[0]).toBeLessThan(mockPrisma.notification.createMany.mock.invocationCallOrder[0]);
+    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.arrayContaining([
+      expect.objectContaining({ type: 'TICKET_ASSIGNED', recipientId: AGENT_B.id }),
+      expect.objectContaining({ type: 'TICKET_UNASSIGNED', recipientId: AGENT_A.id }),
+    ]), skipDuplicates: true }));
+  });
+
+  test('actual status change notifies active requester and assignee with no ticket content', async () => {
+    const before = baseTicket({ assignedToId: AGENT_A.id, updatedAt: new Date('2026-09-01T00:00:00.000Z') });
+    mockPrisma.ticket.findUnique.mockResolvedValueOnce(before).mockResolvedValueOnce({ ...before, status: 'IN_PROGRESS', updatedAt: new Date('2026-09-01T00:01:00.000Z') });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: USER.id }, { id: AGENT_A.id }]);
+    await ticketService.updateTicket('ticket-1', { status: 'IN_PROGRESS' }, ADMIN);
+    const entries = mockPrisma.notification.createMany.mock.calls[0][0].data;
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ recipientId: USER.id, type: 'TICKET_STATUS_CHANGED' }), expect.objectContaining({ recipientId: AGENT_A.id, type: 'TICKET_STATUS_CHANGED' })]));
+    expect(entries[0].message).not.toContain('description');
+  });
+
+  test('work-blocking creation notifies active admins with generic safe copy', async () => {
+    mockPrisma.ticket.create.mockResolvedValue(baseTicket({ id: 'ticket-safe' }));
+    mockPrisma.user.findMany.mockResolvedValueOnce([{ id: ADMIN.id }]).mockResolvedValueOnce([{ id: ADMIN.id }]);
+    await ticketService.createTicket({ title: 'Cannot work', description: 'secret description', isWorkBlocking: true, impactDescription: 'secret impact explanation' }, USER);
+    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ type: 'TICKET_WORK_BLOCKING', recipientId: ADMIN.id, message: expect.not.stringContaining('secret') })] }));
   });
 });
 

@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
+const { writeNotifications, ticketReference, eventEntry } = require('../notifications/notification.service');
 
 async function listComments(ticketId, user) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
@@ -60,6 +61,26 @@ async function addComment(ticketId, data, user) {
         description: `${user.name} added a ${data.isInternal ? 'internal note' : 'comment'}`,
       },
     });
+
+    if (!data.isInternal) {
+      // Re-read in the transaction so a concurrent reassignment cannot send a
+      // public-reply notice to a stale assignee.
+      const currentTicket = await tx.ticket.findUnique({ where: { id: ticketId }, select: { createdById: true, assignedToId: true } });
+      const recipientId = user.role === 'USER' ? currentTicket?.assignedToId : currentTicket?.createdById;
+      if (recipientId) {
+        await writeNotifications(tx, {
+          actorId: user.id,
+          entries: [eventEntry({
+            recipientId,
+            type: 'TICKET_PUBLIC_REPLY',
+            ticketId,
+            title: 'New ticket reply',
+            message: `There is a new reply on ticket ${ticketReference(ticketId)}.`,
+            eventId: comment.id,
+          })],
+        });
+      }
+    }
 
     return comment;
   });

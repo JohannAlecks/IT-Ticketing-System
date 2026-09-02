@@ -3,6 +3,7 @@ const AppError = require('../../utils/AppError');
 const fs = require('fs');
 const { resolveUploadPath } = require('../../middleware/upload');
 const { recordAudit } = require('../audit/audit.service');
+const { writeNotifications, ticketReference, statusLabel, eventEntry } = require('../notifications/notification.service');
 
 function ticketInclude(user) {
   return {
@@ -165,6 +166,21 @@ async function createTicket(data, user) {
       },
     });
 
+    if (isWorkBlocking) {
+      const admins = await tx.user.findMany({ where: { role: 'ADMIN', isActive: true }, select: { id: true } });
+      await writeNotifications(tx, {
+        actorId: user.id,
+        entries: admins.map((admin) => eventEntry({
+          recipientId: admin.id,
+          type: 'TICKET_WORK_BLOCKING',
+          ticketId: ticket.id,
+          title: 'Work-blocking ticket',
+          message: `A work-blocking ticket ${ticketReference(ticket.id)} was created.`,
+          eventId: ticket.id,
+        })),
+      });
+    }
+
     return ticket;
   });
 }
@@ -210,6 +226,19 @@ async function updateTicket(id, data, user) {
 
     const updated = await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) });
     if (historyEntries.length) await tx.ticketHistory.createMany({ data: historyEntries });
+    if (data.status && data.status !== existing.status) {
+      await writeNotifications(tx, {
+        actorId: user.id,
+        entries: [existing.createdById, existing.assignedToId].filter(Boolean).map((recipientId) => eventEntry({
+          recipientId,
+          type: 'TICKET_STATUS_CHANGED',
+          ticketId: id,
+          title: 'Ticket status updated',
+          message: `Ticket ${ticketReference(id)} is now ${statusLabel(data.status)}.`,
+          eventId: `${id}:${existing.status}:${data.status}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}`,
+        })),
+      });
+    }
     return updated;
   });
 }
@@ -248,6 +277,13 @@ async function assignTicket(id, assignedToId, user) {
     else description = `${user.name} unassigned this ticket`;
     await tx.ticketHistory.create({
       data: { ticketId: id, userId: user.id, action: assignedToId ? 'ASSIGNED' : 'UNASSIGNED', description, metadata: { from: existing.assignedToId, to: assignedToId } },
+    });
+    await writeNotifications(tx, {
+      actorId: user.id,
+      entries: [
+        ...(assignedToId ? [eventEntry({ recipientId: assignedToId, type: 'TICKET_ASSIGNED', ticketId: id, title: 'Ticket assigned', message: `Ticket ${ticketReference(id)} was assigned to you.`, eventId: `${id}:${assignedToId}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}` })] : []),
+        ...(existing.assignedToId ? [eventEntry({ recipientId: existing.assignedToId, type: 'TICKET_UNASSIGNED', ticketId: id, title: 'Ticket unassigned', message: `You are no longer assigned to ticket ${ticketReference(id)}.`, eventId: `${id}:${existing.assignedToId}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}` })] : []),
+      ],
     });
     return updated;
   });

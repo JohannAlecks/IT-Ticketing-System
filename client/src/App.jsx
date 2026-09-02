@@ -22,6 +22,7 @@ import KnowledgePage from './pages/KnowledgePage';
 import KnowledgeArticlePage from './pages/KnowledgeArticlePage';
 import KnowledgeManagePage from './pages/KnowledgeManagePage';
 import KnowledgeEditorPage from './pages/KnowledgeEditorPage';
+import NotificationsPage from './pages/NotificationsPage';
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/tickets/new" element={<CreateTicketPage />} />
           <Route path="/tickets/:id" element={<TicketDetailPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/get-started" element={<GetStartedPage />} />
           <Route path="/knowledge" element={<KnowledgePage />} />

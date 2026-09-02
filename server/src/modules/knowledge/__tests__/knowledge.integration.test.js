@@ -41,6 +41,11 @@ describeDb(`knowledge database integration (${skipReason})`, () => {
 
   beforeAll(async () => { await prisma.$connect(); [author, reader, admin] = await Promise.all([createUser('AGENT'), createUser('USER'), createUser('ADMIN')]); });
   afterAll(async () => {
+    if (userIds.length) {
+      await prisma.notification.deleteMany({
+        where: { OR: [{ recipientId: { in: userIds } }, { actorId: { in: userIds } }] },
+      });
+    }
     if (articleIds.length) {
       await prisma.articleFeedback.deleteMany({ where: { articleId: { in: articleIds } } });
       await prisma.auditEvent.deleteMany({ where: { entityType: 'knowledge_article', entityId: { in: articleIds } } });

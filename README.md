@@ -301,6 +301,14 @@ are recorded in the `audit_events` table. Audit metadata excludes comment conten
 file names, passwords, tokens, and request bodies. Apply migrations with
 `cd server && npx prisma migrate deploy`; do not use a database reset.
 
+### In-app notifications
+
+`/api/notifications` is an authenticated, recipient-scoped inbox. Recipients and copy
+are created only by successful server-side domain transactions; it sends no email or
+push notification and stores no source ticket, comment, or article content. A future
+delivery channel must use a transactional outbox. Future retention should preserve
+unread rows and expire read rows only under an explicit policy.
+
 Attachments use private local storage during development. Every list, upload,
 download, and deletion is checked against the ticket's server-side authorization.
 `STORAGE_PROVIDER=local` is the only implemented and verified provider; configure an

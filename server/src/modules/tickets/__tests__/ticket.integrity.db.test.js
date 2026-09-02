@@ -84,6 +84,11 @@ beforeAll(async () => {
   if (!databaseAvailable) return;
   try {
     await prisma.$queryRaw`SELECT 1`;
+    const notificationTable = await prisma.$queryRaw`SELECT to_regclass('public.notifications')::text AS "table"`;
+    if (!notificationTable[0]?.table) {
+      databaseAvailable = false;
+      console.warn('[ticket-integrity-db] SKIPPED: apply the notifications migration before running database-backed integrity tests.');
+    }
   } catch (error) {
     databaseAvailable = false;
     console.warn(`[ticket-integrity-db] SKIPPED: database unavailable (${error.code || error.name}).`);
@@ -96,6 +101,11 @@ afterEach(async () => {
   const userIds = [...createdUserIds];
   createdTicketIds.clear();
   createdUserIds.clear();
+  if (userIds.length) {
+    await prisma.notification.deleteMany({
+      where: { OR: [{ recipientId: { in: userIds } }, { actorId: { in: userIds } }] },
+    });
+  }
   if (ticketIds.length) await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
   if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 });

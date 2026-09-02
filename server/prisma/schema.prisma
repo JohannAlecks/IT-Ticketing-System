@@ -71,6 +71,18 @@ enum KnowledgeVisibility {
   INTERNAL
 }
 
+enum NotificationType {
+  TICKET_ASSIGNED
+  TICKET_UNASSIGNED
+  TICKET_STATUS_CHANGED
+  TICKET_PUBLIC_REPLY
+  TICKET_WORK_BLOCKING
+  KNOWLEDGE_SUBMITTED
+  KNOWLEDGE_PUBLISHED
+  KNOWLEDGE_RETURNED
+  ACCOUNT_REACTIVATED
+}
+
 // ─────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────
@@ -102,10 +114,35 @@ model User {
   knowledgeArticlesAuthored KnowledgeArticle[]       @relation("KnowledgeArticleAuthor")
   knowledgeArticlesReviewed KnowledgeArticle[]       @relation("KnowledgeArticleReviewer")
   articleFeedback           ArticleFeedback[]        @relation("ArticleFeedbackUser")
+  notificationsReceived     Notification[]           @relation("NotificationRecipient")
+  notificationsActed        Notification[]           @relation("NotificationActor")
 
   @@index([email])
   @@index([role])
   @@map("users")
+}
+
+// In-app inbox rows deliberately keep resource references as scalar IDs. This
+// preserves an auditable notification after a ticket/article is removed and
+// avoids storing user-controlled navigation URLs or source content.
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String
+  recipient   User             @relation("NotificationRecipient", fields: [recipientId], references: [id])
+  actorId     String?
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  ticketId    String?
+  articleId   String?
+  title       String           @db.VarChar(160)
+  message     String           @db.VarChar(300)
+  dedupeKey   String?          @unique @db.VarChar(255)
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([recipientId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([recipientId, readAt, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("notifications")
 }
 
 model UserOnboarding {

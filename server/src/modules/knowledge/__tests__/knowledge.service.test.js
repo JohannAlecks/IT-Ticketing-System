@@ -1,5 +1,7 @@
 const mockPrisma = {
   knowledgeArticle: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
+  user: { findMany: jest.fn() },
+  notification: { createMany: jest.fn() },
   articleFeedback: { upsert: jest.fn(), deleteMany: jest.fn(), groupBy: jest.fn() },
   auditEvent: { create: jest.fn() },
   $transaction: jest.fn(),
@@ -19,7 +21,9 @@ const article = (overrides = {}) => ({ id, slug: 'network-help', title: 'Network
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockPrisma.$transaction.mockImplementation(async (callback) => callback({ knowledgeArticle: mockPrisma.knowledgeArticle, auditEvent: mockPrisma.auditEvent }));
+  mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
+  mockPrisma.$transaction.mockImplementation(async (callback) => callback({ knowledgeArticle: mockPrisma.knowledgeArticle, auditEvent: mockPrisma.auditEvent, user: mockPrisma.user, notification: mockPrisma.notification }));
 });
 
 test('1. USER read policy is published public only', () => expect(service.readPolicy(user)).toEqual({ status: 'PUBLISHED', visibility: 'PUBLIC' }));
@@ -158,4 +162,25 @@ test('28. feedback summary returns 404 for an unknown article', async () => {
   mockPrisma.knowledgeArticle.findUnique.mockResolvedValue(null);
   await expect(service.feedbackSummary(admin, id)).rejects.toMatchObject({ statusCode: 404 });
   expect(mockPrisma.articleFeedback.groupBy).not.toHaveBeenCalled();
+});
+
+test('29. submit notifies active admins with generic copy only after the workflow audit', async () => {
+  mockPrisma.knowledgeArticle.findFirst.mockResolvedValue(article({ authorId: agent.id }));
+  mockPrisma.knowledgeArticle.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.knowledgeArticle.findUnique.mockResolvedValue(article({ status: 'IN_REVIEW', version: 2 }));
+  mockPrisma.user.findMany.mockResolvedValue([{ id: admin.id }]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
+  await service.submitArticle(agent, id, 1);
+  expect(mockPrisma.auditEvent.create.mock.invocationCallOrder[0]).toBeLessThan(mockPrisma.notification.createMany.mock.invocationCallOrder[0]);
+  expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: admin.id, type: 'KNOWLEDGE_SUBMITTED', message: expect.not.stringContaining(article().title) })] }));
+});
+
+test('30. publishing notifies only the active author and does not include article content', async () => {
+  mockPrisma.knowledgeArticle.findFirst.mockResolvedValue(article({ status: 'IN_REVIEW', authorId: agent.id }));
+  mockPrisma.knowledgeArticle.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.knowledgeArticle.findUnique.mockResolvedValue(article({ status: 'PUBLISHED', version: 2 }));
+  mockPrisma.user.findMany.mockResolvedValue([{ id: agent.id }]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
+  await service.publishArticle(admin, id, 1);
+  expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: agent.id, type: 'KNOWLEDGE_PUBLISHED', message: expect.not.stringContaining('This is enough') })] }));
 });

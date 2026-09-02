@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
+const { writeNotifications, eventEntry } = require('../notifications/notification.service');
 
 const SALT_ROUNDS = 12;
 
@@ -147,7 +148,7 @@ async function changeUserLifecycle(id, change, actor, requestId) {
       : nextIsActive
         ? 'USER_REACTIVATED'
         : 'user.deactivated';
-    await tx.auditEvent.create({
+    const auditEvent = await tx.auditEvent.create({
       data: {
         eventType,
         entityType: 'user',
@@ -161,6 +162,19 @@ async function changeUserLifecycle(id, change, actor, requestId) {
         },
       },
     });
+
+    if (changingActiveState && nextIsActive && !target.isActive) {
+      await writeNotifications(tx, {
+        actorId: actor.id,
+        entries: [eventEntry({
+          recipientId: id,
+          type: 'ACCOUNT_REACTIVATED',
+          title: 'Account reactivated',
+          message: 'Your HelpDesk account has been reactivated.',
+          eventId: auditEvent.id,
+        })],
+      });
+    }
 
     return { user, unassignedTickets };
   }, { isolationLevel: 'Serializable' });

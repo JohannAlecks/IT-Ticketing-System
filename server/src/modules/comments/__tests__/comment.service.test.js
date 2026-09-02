@@ -1,5 +1,7 @@
 jest.mock('../../../config/prisma', () => ({
   ticket: { findUnique: jest.fn() },
+  user: { findMany: jest.fn() },
+  notification: { createMany: jest.fn() },
   comment: { findMany: jest.fn(), create: jest.fn() },
   ticketHistory: { create: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
@@ -17,7 +19,11 @@ function baseTicket(overrides = {}) {
   return { id: 'ticket-1', createdById: USER.id, assignedToId: null, ...overrides };
 }
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
+});
 
 describe('listComments — internal note visibility', () => {
   test('USER request excludes internal notes at the query level', async () => {
@@ -85,5 +91,22 @@ describe('addComment — internal note authorization', () => {
     await expect(
       commentService.addComment('ticket-1', { content: 'hi', isInternal: false }, ADMIN)
     ).resolves.toBeTruthy();
+  });
+});
+
+describe('comment notification events', () => {
+  test('public requester comment notifies only the current assignee without storing comment content', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket({ assignedToId: AGENT_A.id }));
+    mockPrisma.comment.create.mockResolvedValue({ id: 'comment-1', content: 'private reply words', isInternal: false });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: AGENT_A.id }]);
+    await commentService.addComment('ticket-1', { content: 'private reply words', isInternal: false }, USER);
+    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: AGENT_A.id, type: 'TICKET_PUBLIC_REPLY', message: expect.not.stringContaining('private reply words') })] }));
+  });
+
+  test('internal notes do not produce requester notifications', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket({ assignedToId: AGENT_A.id }));
+    mockPrisma.comment.create.mockResolvedValue({ id: 'comment-2', isInternal: true });
+    await commentService.addComment('ticket-1', { content: 'secret internal note', isInternal: true }, AGENT_A);
+    expect(mockPrisma.notification.createMany).not.toHaveBeenCalled();
   });
 });

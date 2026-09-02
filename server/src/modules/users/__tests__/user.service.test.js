@@ -1,5 +1,6 @@
 jest.mock('../../../config/prisma', () => ({
   user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  notification: { createMany: jest.fn() },
   ticket: { findMany: jest.fn(), updateMany: jest.fn() },
   ticketHistory: { createMany: jest.fn() },
   auditEvent: { create: jest.fn() },
@@ -12,7 +13,12 @@ const userService = require('../user.service');
 const ACTOR = { id: 'admin-1', name: 'Ada Admin', role: 'ADMIN' };
 const INACTIVE_AGENT = { id: 'agent-1', name: 'Alex Agent', email: 'alex@example.com', role: 'AGENT', isActive: false, department: null };
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockPrisma.auditEvent.create.mockResolvedValue({ id: 'audit-event-1' });
+  mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
+});
 
 describe('reactivateUser', () => {
   test('reactivates an inactive user and creates an audit event in the transaction', async () => {
@@ -27,6 +33,23 @@ describe('reactivateUser', () => {
     await expect(userService.reactivateUser('missing', ACTOR)).rejects.toMatchObject({ statusCode: 404 });
     mockPrisma.user.findUnique.mockResolvedValueOnce({ ...INACTIVE_AGENT, isActive: true });
     await expect(userService.reactivateUser(INACTIVE_AGENT.id, ACTOR)).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  test('reactivation writes one inbox entry after the lifecycle audit; deactivation does not', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(INACTIVE_AGENT);
+    mockPrisma.user.update.mockResolvedValue({ ...INACTIVE_AGENT, isActive: true });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: INACTIVE_AGENT.id }]);
+    mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
+    await userService.reactivateUser(INACTIVE_AGENT.id, ACTOR, 'request-3');
+    expect(mockPrisma.auditEvent.create.mock.invocationCallOrder[0]).toBeLessThan(mockPrisma.notification.createMany.mock.invocationCallOrder[0]);
+    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: INACTIVE_AGENT.id, type: 'ACCOUNT_REACTIVATED' })] }));
+
+    jest.clearAllMocks();
+    mockPrisma.user.findUnique.mockResolvedValue({ ...INACTIVE_AGENT, isActive: true });
+    mockPrisma.user.update.mockResolvedValue(INACTIVE_AGENT);
+    mockPrisma.ticket.findMany.mockResolvedValue([]);
+    await userService.deactivateUser(INACTIVE_AGENT.id, ACTOR, 'request-4');
+    expect(mockPrisma.notification.createMany).not.toHaveBeenCalled();
   });
 });
 
