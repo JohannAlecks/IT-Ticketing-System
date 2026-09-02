@@ -15,6 +15,7 @@ export const protectedQueryKeys = {
   auditEvents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'audit-events'],
   onboarding: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'onboarding'],
   notifications: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'notifications'],
+  notificationPreferences: (userId, role) => [PROTECTED_QUERY_SCOPE, userId, 'notification-preferences', String(role || '').toUpperCase()],
   // Knowledge responses are role-projected (for example, support users may
   // read INTERNAL articles). Keep the role in this root so a role change can
   // never reuse a broader response from the same account.
@@ -28,6 +29,7 @@ export const protectedMutationKeys = {
   comment: (userId, ticketId) => [PROTECTED_QUERY_SCOPE, userId, 'comment-mutation', ticketId],
   onboarding: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'onboarding-mutation'],
   notification: (userId, action, notificationId) => [PROTECTED_QUERY_SCOPE, userId, 'notification-mutation', action, notificationId],
+  notificationPreferences: (userId, role) => [PROTECTED_QUERY_SCOPE, userId, 'notification-preferences-mutation', String(role || '').toUpperCase()],
   knowledge: (userId, role, action, articleId) => [PROTECTED_QUERY_SCOPE, userId, 'knowledge-mutation', String(role || '').toUpperCase(), action, articleId],
 };
 

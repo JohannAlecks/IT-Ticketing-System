@@ -2,6 +2,7 @@ const mockPrisma = {
   knowledgeArticle: { findMany: jest.fn(), count: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   user: { findMany: jest.fn() },
   notification: { createMany: jest.fn() },
+  notificationPreference: { findMany: jest.fn() },
   articleFeedback: { upsert: jest.fn(), deleteMany: jest.fn(), groupBy: jest.fn() },
   auditEvent: { create: jest.fn() },
   $transaction: jest.fn(),
@@ -22,8 +23,9 @@ const article = (overrides = {}) => ({ id, slug: 'network-help', title: 'Network
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
-  mockPrisma.$transaction.mockImplementation(async (callback) => callback({ knowledgeArticle: mockPrisma.knowledgeArticle, auditEvent: mockPrisma.auditEvent, user: mockPrisma.user, notification: mockPrisma.notification }));
+  mockPrisma.$transaction.mockImplementation(async (callback) => callback({ knowledgeArticle: mockPrisma.knowledgeArticle, auditEvent: mockPrisma.auditEvent, user: mockPrisma.user, notification: mockPrisma.notification, notificationPreference: mockPrisma.notificationPreference }));
 });
 
 test('1. USER read policy is published public only', () => expect(service.readPolicy(user)).toEqual({ status: 'PUBLISHED', visibility: 'PUBLIC' }));

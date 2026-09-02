@@ -1,5 +1,24 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
+const { PREFERENCE_FIELDS } = require('./notification.schema');
+
+const MANDATORY_PREFERENCE_FIELDS = ['accountReactivated'];
+const ROLE_VISIBLE_PREFERENCE_FIELDS = {
+  USER: ['ticketStatusChanged', 'ticketPublicReply'],
+  AGENT: ['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned'],
+  ADMIN: PREFERENCE_FIELDS,
+};
+const TYPE_PREFERENCE_FIELD = {
+  TICKET_ASSIGNED: 'ticketAssigned',
+  TICKET_UNASSIGNED: 'ticketUnassigned',
+  TICKET_STATUS_CHANGED: 'ticketStatusChanged',
+  TICKET_PUBLIC_REPLY: 'ticketPublicReply',
+  TICKET_WORK_BLOCKING: 'ticketWorkBlocking',
+  KNOWLEDGE_SUBMITTED: 'knowledgeSubmitted',
+  KNOWLEDGE_PUBLISHED: 'knowledgePublished',
+  KNOWLEDGE_RETURNED: 'knowledgeReturned',
+};
+const PREFERENCE_SELECT = Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, true]));
 
 const NOTIFICATION_SELECT = {
   id: true, type: true, ticketId: true, articleId: true,
@@ -22,7 +41,20 @@ async function writeNotifications(tx, { actorId = null, entries }) {
     select: { id: true },
   });
   const activeIds = new Set(activeUsers.map((user) => user.id));
-  const data = candidates.filter((entry) => activeIds.has(entry.recipientId)).map((entry) => ({
+  if (!activeIds.size) return { count: 0 };
+
+  // One batch read avoids an N+1 preference lookup and preserves the existing
+  // server-selected recipient and active-account policies.
+  const preferences = await tx.notificationPreference.findMany({
+    where: { userId: { in: [...activeIds] } },
+    select: { userId: true, ...PREFERENCE_SELECT },
+  });
+  const preferencesByUserId = new Map(preferences.map((preference) => [preference.userId, preference]));
+  const data = candidates.filter((entry) => {
+    if (!activeIds.has(entry.recipientId)) return false;
+    const preferenceField = TYPE_PREFERENCE_FIELD[entry.type];
+    return !preferenceField || preferencesByUserId.get(entry.recipientId)?.[preferenceField] !== false;
+  }).map((entry) => ({
     recipientId: entry.recipientId,
     actorId,
     type: entry.type,
@@ -48,6 +80,67 @@ function eventEntry({ recipientId, type, ticketId = null, articleId = null, titl
   return { recipientId, type, ticketId, articleId, title, message, dedupeKey: `n:${type}:${eventId}:${recipientId}` };
 }
 
+function visiblePreferenceFields(role) {
+  return ROLE_VISIBLE_PREFERENCE_FIELDS[role] || [];
+}
+
+function defaultPreferences() {
+  return Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, true]));
+}
+
+function preferenceResponse(user, preference) {
+  const values = { ...defaultPreferences(), ...(preference || {}) };
+  return {
+    preferences: {
+      ...Object.fromEntries(visiblePreferenceFields(user.role).map((field) => [field, values[field]])),
+      accountReactivated: true,
+    },
+    mandatory: MANDATORY_PREFERENCE_FIELDS,
+  };
+}
+
+async function getNotificationPreferences(user) {
+  const preference = await prisma.notificationPreference.findUnique({
+    where: { userId: user.id },
+    select: PREFERENCE_SELECT,
+  });
+  return preferenceResponse(user, preference);
+}
+
+async function updateNotificationPreferences(user, changes, requestId) {
+  const visibleFields = new Set(visiblePreferenceFields(user.role));
+  const irrelevantKeys = Object.keys(changes).filter((field) => !visibleFields.has(field));
+  if (irrelevantKeys.length) throw new AppError('One or more notification preferences are not available for your role', 422);
+
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.notificationPreference.findUnique({
+      where: { userId: user.id },
+      select: PREFERENCE_SELECT,
+    });
+    const effectiveCurrent = { ...defaultPreferences(), ...(current || {}) };
+    const changedKeys = Object.keys(changes).filter((field) => effectiveCurrent[field] !== changes[field]);
+    if (!changedKeys.length) return preferenceResponse(user, current);
+
+    const preference = await tx.notificationPreference.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, ...changes },
+      update: changes,
+      select: PREFERENCE_SELECT,
+    });
+    await tx.auditEvent.create({
+      data: {
+        eventType: 'notification.preferences_updated',
+        entityType: 'notification_preferences',
+        entityId: user.id,
+        actorUserId: user.id,
+        requestId,
+        metadata: { changedKeys },
+      },
+    });
+    return preferenceResponse(user, preference);
+  });
+}
+
 async function listNotifications(user, query) {
   const where = { recipientId: user.id, ...(query.status === 'UNREAD' ? { readAt: null } : {}), ...(query.type ? { type: query.type } : {}) };
   const [notifications, total] = await Promise.all([
@@ -71,4 +164,9 @@ async function setReadState(user, id, read) {
   return prisma.notification.findFirst({ where: { id, recipientId: user.id }, select: NOTIFICATION_SELECT });
 }
 
-module.exports = { NOTIFICATION_SELECT, writeNotifications, ticketReference, statusLabel, eventEntry, listNotifications, unreadCount, readAll, setReadState };
+module.exports = {
+  NOTIFICATION_SELECT, PREFERENCE_FIELDS, PREFERENCE_SELECT, MANDATORY_PREFERENCE_FIELDS,
+  TYPE_PREFERENCE_FIELD, visiblePreferenceFields, preferenceResponse, writeNotifications,
+  ticketReference, statusLabel, eventEntry, getNotificationPreferences, updateNotificationPreferences,
+  listNotifications, unreadCount, readAll, setReadState,
+};

@@ -1,17 +1,22 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { notificationsApi } from '../api/notifications.api';
-import { clearProtectedCache, protectedQueryKeys } from '../query/protectedCache';
-import { notificationDestination, useMarkNotificationRead, useUnreadNotificationCount } from './useNotifications';
+import { clearProtectedCache, protectedMutationKeys, protectedQueryKeys } from '../query/protectedCache';
+import { notificationDestination, useMarkNotificationRead, useNotificationPreferences, useUnreadNotificationCount, useUpdateNotificationPreferences } from './useNotifications';
 
 const auth = vi.hoisted(() => ({ user: null }));
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: auth.user }) }));
-vi.mock('../api/notifications.api', () => ({ notificationsApi: { unreadCount: vi.fn(), list: vi.fn(), markRead: vi.fn(), markUnread: vi.fn(), markAllRead: vi.fn() } }));
+vi.mock('../api/notifications.api', () => ({ notificationsApi: { unreadCount: vi.fn(), list: vi.fn(), getPreferences: vi.fn(), updatePreferences: vi.fn(), markRead: vi.fn(), markUnread: vi.fn(), markAllRead: vi.fn() } }));
 
 function wrapper(client) {
   return ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
+
+beforeEach(() => {
+  auth.user = null;
+  vi.clearAllMocks();
+});
 
 describe('notification query safety', () => {
   it('does not start unread polling without an authenticated account', async () => {
@@ -34,6 +39,63 @@ describe('notification query safety', () => {
     expect(query.options.refetchInterval).toBe(45_000);
     expect(query.options.refetchIntervalInBackground).toBe(false);
     expect(query.options.refetchOnWindowFocus).toBe(true);
+  });
+
+  it('loads role-qualified preferences with TanStack Query AbortSignal', async () => {
+    auth.user = { id: 'account-a', role: 'AGENT' };
+    let receivedSignal;
+    notificationsApi.getPreferences.mockImplementation((signal) => {
+      receivedSignal = signal;
+      return Promise.resolve({ preferences: { ticketAssigned: true }, mandatory: ['accountReactivated'] });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useNotificationPreferences(), { wrapper: wrapper(client) });
+
+    await waitFor(() => expect(result.current.data?.preferences?.ticketAssigned).toBe(true));
+    expect(notificationsApi.getPreferences).toHaveBeenCalledWith(expect.any(AbortSignal));
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(client.getQueryData(protectedQueryKeys.notificationPreferences('account-a', 'AGENT'))).toEqual({
+      preferences: { ticketAssigned: true },
+      mandatory: ['accountReactivated'],
+    });
+  });
+
+  it('does not flash the previous account preferences when the identity changes', async () => {
+    auth.user = { id: 'account-a', role: 'USER' };
+    let resolveFirst;
+    let resolveSecond;
+    notificationsApi.getPreferences
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve; }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, rerender } = renderHook(() => useNotificationPreferences(), { wrapper: wrapper(client) });
+
+    await waitFor(() => expect(resolveFirst).toBeDefined());
+    resolveFirst({ preferences: { ticketStatusChanged: true }, mandatory: ['accountReactivated'] });
+    await waitFor(() => expect(result.current.data?.preferences?.ticketStatusChanged).toBe(true));
+
+    auth.user = { id: 'account-b', role: 'USER' };
+    rerender();
+    expect(result.current.data).toBeUndefined();
+    await waitFor(() => expect(resolveSecond).toBeDefined());
+    expect(result.current.data).toBeUndefined();
+    resolveSecond({ preferences: { ticketStatusChanged: false }, mandatory: ['accountReactivated'] });
+    await waitFor(() => expect(result.current.data?.preferences?.ticketStatusChanged).toBe(false));
+  });
+
+  it('updates only the active role-qualified preferences cache', async () => {
+    auth.user = { id: 'account-a', role: 'ADMIN' };
+    const response = { preferences: { ticketAssigned: false }, mandatory: ['accountReactivated'] };
+    notificationsApi.updatePreferences.mockResolvedValue(response);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const queryKey = protectedQueryKeys.notificationPreferences('account-a', 'ADMIN');
+    client.setQueryData(queryKey, { preferences: { ticketAssigned: true }, mandatory: ['accountReactivated'] });
+    const { result } = renderHook(() => useUpdateNotificationPreferences(), { wrapper: wrapper(client) });
+
+    await act(async () => { await result.current.mutateAsync({ ticketAssigned: false }); });
+    expect(notificationsApi.updatePreferences).toHaveBeenCalledWith({ ticketAssigned: false });
+    expect(client.getQueryData(queryKey)).toEqual(response);
+    expect(client.getMutationCache().findAll({ mutationKey: protectedMutationKeys.notificationPreferences('account-a', 'ADMIN') })).toHaveLength(1);
   });
 
   it('derives destinations only from known notification types and identifiers', () => {

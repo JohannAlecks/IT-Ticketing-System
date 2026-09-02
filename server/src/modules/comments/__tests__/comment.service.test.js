@@ -2,6 +2,7 @@ jest.mock('../../../config/prisma', () => ({
   ticket: { findUnique: jest.fn() },
   user: { findMany: jest.fn() },
   notification: { createMany: jest.fn() },
+  notificationPreference: { findMany: jest.fn() },
   comment: { findMany: jest.fn(), create: jest.fn() },
   ticketHistory: { create: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
@@ -22,6 +23,7 @@ function baseTicket(overrides = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 

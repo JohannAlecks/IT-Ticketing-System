@@ -116,6 +116,7 @@ model User {
   articleFeedback           ArticleFeedback[]        @relation("ArticleFeedbackUser")
   notificationsReceived     Notification[]           @relation("NotificationRecipient")
   notificationsActed        Notification[]           @relation("NotificationActor")
+  notificationPreference    NotificationPreference?
 
   @@index([email])
   @@index([role])
@@ -143,6 +144,27 @@ model Notification {
   @@index([recipientId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([recipientId, readAt, createdAt(sort: Desc), id(sort: Desc)])
   @@map("notifications")
+}
+
+// Per-user in-app notification settings. Missing rows deliberately mean every
+// optional notification remains enabled, so introducing preferences never
+// changes the delivery behavior for existing accounts.
+model NotificationPreference {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticketAssigned      Boolean  @default(true)
+  ticketUnassigned    Boolean  @default(true)
+  ticketStatusChanged Boolean  @default(true)
+  ticketPublicReply   Boolean  @default(true)
+  ticketWorkBlocking  Boolean  @default(true)
+  knowledgeSubmitted  Boolean  @default(true)
+  knowledgePublished  Boolean  @default(true)
+  knowledgeReturned   Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("notification_preferences")
 }
 
 model UserOnboarding {

@@ -9,5 +9,7 @@ const readAll = asyncHandler(async (req, res) => {
 });
 const markRead = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: { notification: await service.setReadState(req.user, req.params.id, true) } }));
 const markUnread = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: { notification: await service.setReadState(req.user, req.params.id, false) } }));
+const getPreferences = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.getNotificationPreferences(req.user) }));
+const updatePreferences = asyncHandler(async (req, res) => res.status(200).json({ success: true, data: await service.updateNotificationPreferences(req.user, req.body, req.requestId) }));
 
-module.exports = { list, unreadCount, readAll, markRead, markUnread };
+module.exports = { list, unreadCount, readAll, markRead, markUnread, getPreferences, updatePreferences };

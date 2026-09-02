@@ -79,6 +79,12 @@ describe('protected cache ownership', () => {
     const secondRoot = protectedQueryKeys.notifications('account-b');
     client.setQueryData([...firstRoot, 'unread-count'], { unreadCount: 4 });
     client.setQueryData([...secondRoot, 'list', { status: 'ALL', page: 1, limit: 12 }], { notifications: [{ id: 'b' }] });
+    client.setQueryData(protectedQueryKeys.notificationPreferences('account-a', 'USER'), { preferences: { ticketStatusChanged: true } });
+    client.setQueryData(protectedQueryKeys.notificationPreferences('account-b', 'ADMIN'), { preferences: { ticketAssigned: false } });
+    client.getMutationCache().build(client, {
+      mutationKey: protectedMutationKeys.notificationPreferences('account-a', 'USER'),
+      mutationFn: async () => undefined,
+    });
 
     let resolveRequest;
     const request = client.fetchQuery({
@@ -93,12 +99,24 @@ describe('protected cache ownership', () => {
     expect(client.getQueryData([...firstRoot, 'unread-count'])).toBeUndefined();
     expect(client.getQueryData([...secondRoot, 'list', { status: 'ALL', page: 1, limit: 12 }])).toBeUndefined();
     expect(client.getQueryData([...firstRoot, 'list', { status: 'ALL', page: 1, limit: 12 }])).toBeUndefined();
+    expect(client.getQueryData(protectedQueryKeys.notificationPreferences('account-a', 'USER'))).toBeUndefined();
+    expect(client.getQueryData(protectedQueryKeys.notificationPreferences('account-b', 'ADMIN'))).toBeUndefined();
+    expect(client.getMutationCache().findAll({ mutationKey: protectedMutationKeys.notificationPreferences('account-a', 'USER') })).toHaveLength(0);
   });
 
   it('roots notification keys and mutation keys on stable account ids only', () => {
     expect(protectedQueryKeys.notifications('account-a')).toEqual(['protected', 'account-a', 'notifications']);
     expect(protectedMutationKeys.notification('account-a', 'read', 'notice-1')).toEqual([
       'protected', 'account-a', 'notification-mutation', 'read', 'notice-1',
+    ]);
+  });
+
+  it('qualifies notification preferences by account and role', () => {
+    expect(protectedQueryKeys.notificationPreferences('account-a', 'user')).toEqual([
+      'protected', 'account-a', 'notification-preferences', 'USER',
+    ]);
+    expect(protectedMutationKeys.notificationPreferences('account-a', 'ADMIN')).toEqual([
+      'protected', 'account-a', 'notification-preferences-mutation', 'ADMIN',
     ]);
   });
 });

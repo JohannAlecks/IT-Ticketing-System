@@ -23,6 +23,7 @@ jest.mock('../../../config/prisma', () => ({
     findMany: jest.fn(),
   },
   notification: { createMany: jest.fn() },
+  notificationPreference: { findMany: jest.fn() },
   ticketHistory: {
     create: jest.fn(),
     createMany: jest.fn(),
@@ -56,6 +57,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 

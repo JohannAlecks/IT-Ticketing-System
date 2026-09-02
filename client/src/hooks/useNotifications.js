@@ -13,6 +13,21 @@ export const NOTIFICATION_TYPES = [
 const ticketTypes = new Set(['TICKET_ASSIGNED', 'TICKET_UNASSIGNED', 'TICKET_STATUS_CHANGED', 'TICKET_PUBLIC_REPLY', 'TICKET_WORK_BLOCKING']);
 const knowledgeTypes = new Set(['KNOWLEDGE_SUBMITTED', 'KNOWLEDGE_PUBLISHED', 'KNOWLEDGE_RETURNED']);
 
+export const NOTIFICATION_PREFERENCE_KEYS = [
+  'ticketAssigned',
+  'ticketUnassigned',
+  'ticketStatusChanged',
+  'ticketPublicReply',
+  'ticketWorkBlocking',
+  'knowledgeSubmitted',
+  'knowledgePublished',
+  'knowledgeReturned',
+];
+
+function notificationRole(role, user) {
+  return String(role || user?.role || '').toUpperCase();
+}
+
 export function normalizeNotificationFilters(filters = {}) {
   const status = String(filters.status || 'ALL').toUpperCase() === 'UNREAD' ? 'UNREAD' : 'ALL';
   const type = String(filters.type || '').toUpperCase();
@@ -113,6 +128,47 @@ export function useUnreadNotificationCount() {
     refetchInterval: 45_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useNotificationPreferences() {
+  const { user, role } = useAuth();
+  const userId = user?.id;
+  const normalizedRole = notificationRole(role, user);
+  return useQuery({
+    queryKey: protectedQueryKeys.notificationPreferences(userId, normalizedRole),
+    queryFn: ({ signal }) => notificationsApi.getPreferences(signal),
+    enabled: !!userId,
+  });
+}
+
+export function useUpdateNotificationPreferences() {
+  const queryClient = useQueryClient();
+  const { user, role } = useAuth();
+  const userId = user?.id;
+  const normalizedRole = notificationRole(role, user);
+  const activeIdentity = useRef({ userId, role: normalizedRole });
+  const latestRequest = useRef(0);
+  activeIdentity.current = { userId, role: normalizedRole };
+  const queryKey = protectedQueryKeys.notificationPreferences(userId, normalizedRole);
+
+  return useMutation({
+    mutationKey: protectedMutationKeys.notificationPreferences(userId, normalizedRole),
+    mutationFn: (payload) => notificationsApi.updatePreferences(payload),
+    onMutate: () => ({
+      userId,
+      role: normalizedRole,
+      requestId: ++latestRequest.current,
+    }),
+    onSuccess: (data, _variables, context) => {
+      const identity = activeIdentity.current;
+      if (
+        context?.userId !== identity.userId ||
+        context?.role !== identity.role ||
+        context?.requestId !== latestRequest.current
+      ) return;
+      queryClient.setQueryData(queryKey, data);
+    },
   });
 }
 

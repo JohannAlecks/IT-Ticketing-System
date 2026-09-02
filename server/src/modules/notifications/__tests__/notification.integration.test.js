@@ -40,6 +40,7 @@ describeDb(`notification inbox integration (${skipReason})`, () => {
   beforeAll(async () => prisma.$connect());
   afterAll(async () => {
     if (ids.users.length) await prisma.notification.deleteMany({ where: { recipientId: { in: ids.users } } });
+    if (ids.users.length) await prisma.auditEvent.deleteMany({ where: { entityType: 'notification_preferences', entityId: { in: ids.users } } });
     if (ids.tickets.length) await prisma.ticketHistory.deleteMany({ where: { ticketId: { in: ids.tickets } } });
     if (ids.tickets.length) await prisma.ticket.deleteMany({ where: { id: { in: ids.tickets } } });
     if (ids.users.length) await prisma.user.deleteMany({ where: { id: { in: ids.users } } });
@@ -63,6 +64,51 @@ describeDb(`notification inbox integration (${skipReason})`, () => {
     // Same assignment is a service no-op, so it cannot create a second event.
     await ticketService.assignTicket(ticket.id, agent.id, admin);
     expect(await prisma.notification.count({ where: { recipientId: agent.id, ticketId: ticket.id, type: 'TICKET_ASSIGNED' } })).toBe(1);
+  });
+
+  test('preferences suppress only future optional events per recipient while mandatory and historical rows remain', async () => {
+    const optedOutAgent = await user('AGENT');
+    const enabledAgent = await user('AGENT');
+    const historicalId = randomUUID();
+
+    await prisma.notification.create({
+      data: {
+        recipientId: optedOutAgent.id,
+        type: 'TICKET_ASSIGNED',
+        title: 'Historical assignment',
+        message: 'Created before the preference changed.',
+        dedupeKey: `${prefix}:historical:${historicalId}`,
+      },
+    });
+    await notificationService.updateNotificationPreferences(
+      optedOutAgent,
+      { ticketAssigned: false, ticketPublicReply: false },
+      `${prefix}:preferences`,
+    );
+
+    const assignmentEventId = randomUUID();
+    await notificationService.writeNotifications(prisma, {
+      entries: [
+        notificationService.eventEntry({ recipientId: optedOutAgent.id, type: 'TICKET_ASSIGNED', title: 'Assigned', message: 'Optional assignment.', eventId: assignmentEventId }),
+        notificationService.eventEntry({ recipientId: enabledAgent.id, type: 'TICKET_ASSIGNED', title: 'Assigned', message: 'Optional assignment.', eventId: assignmentEventId }),
+      ],
+    });
+    // Replaying the same server event proves the existing dedupe key remains effective.
+    await notificationService.writeNotifications(prisma, {
+      entries: [notificationService.eventEntry({ recipientId: enabledAgent.id, type: 'TICKET_ASSIGNED', title: 'Assigned', message: 'Optional assignment.', eventId: assignmentEventId })],
+    });
+
+    await notificationService.writeNotifications(prisma, {
+      entries: [notificationService.eventEntry({ recipientId: optedOutAgent.id, type: 'TICKET_PUBLIC_REPLY', title: 'Reply', message: 'Optional reply.', eventId: randomUUID() })],
+    });
+    await notificationService.writeNotifications(prisma, {
+      entries: [notificationService.eventEntry({ recipientId: optedOutAgent.id, type: 'ACCOUNT_REACTIVATED', title: 'Account reactivated', message: 'Mandatory account alert.', eventId: randomUUID() })],
+    });
+
+    expect(await prisma.notification.count({ where: { recipientId: optedOutAgent.id, type: 'TICKET_ASSIGNED' } })).toBe(1);
+    expect(await prisma.notification.count({ where: { recipientId: optedOutAgent.id, type: 'TICKET_PUBLIC_REPLY' } })).toBe(0);
+    expect(await prisma.notification.count({ where: { recipientId: optedOutAgent.id, type: 'ACCOUNT_REACTIVATED' } })).toBe(1);
+    expect(await prisma.notification.count({ where: { recipientId: enabledAgent.id, type: 'TICKET_ASSIGNED' } })).toBe(1);
   });
 });
 

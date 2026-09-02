@@ -9,4 +9,13 @@ const listQuerySchema = z.object({
 }).strict();
 const emptyBodySchema = z.object({}).strict();
 
-module.exports = { TYPES, listQuerySchema, emptyBodySchema };
+const PREFERENCE_FIELDS = [
+  'ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply',
+  'ticketWorkBlocking', 'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned',
+];
+
+const preferencePatchSchema = z.object(Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, z.boolean().optional()])))
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: 'At least one preference is required' });
+
+module.exports = { TYPES, listQuerySchema, emptyBodySchema, PREFERENCE_FIELDS, preferencePatchSchema };
