@@ -1,13 +1,45 @@
 import { QueryClient } from '@tanstack/react-query';
 import { waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { clearProtectedCache, protectedMutationKeys, protectedQueryKeys } from './protectedCache';
+import { clearProtectedCache, invalidateTicketTransitionQueries, protectedMutationKeys, protectedQueryKeys } from './protectedCache';
 
 function makeClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
 describe('protected cache ownership', () => {
+  it('separates ticket lists by account, role, archive mode, and filters', () => {
+    const active = [...protectedQueryKeys.tickets('account-a', 'AGENT', 'active'), { page: 1, limit: 15 }];
+    const archived = [...protectedQueryKeys.tickets('account-a', 'AGENT', 'archived'), { page: 1, limit: 15 }];
+    const adminArchived = [...protectedQueryKeys.tickets('account-a', 'ADMIN', 'archived'), { page: 1, limit: 15 }];
+
+    expect(active).toEqual(['protected', 'account-a', 'AGENT', 'tickets', 'active', { page: 1, limit: 15 }]);
+    expect(archived).toEqual(['protected', 'account-a', 'AGENT', 'tickets', 'archived', { page: 1, limit: 15 }]);
+    expect(adminArchived).not.toEqual(archived);
+    expect(protectedQueryKeys.ticket('account-a', 'ticket-1', 'AGENT')).not.toEqual(protectedQueryKeys.ticket('account-a', 'ticket-1', 'ADMIN'));
+    expect(protectedMutationKeys.ticket('account-a', 'archive', 'ticket-1', 'AGENT')).not.toEqual(protectedMutationKeys.ticket('account-a', 'archive', 'ticket-1', 'ADMIN'));
+  });
+
+  it('invalidates both ticket list modes and related projections for only the current account and role', async () => {
+    const client = makeClient();
+    const currentActive = [...protectedQueryKeys.tickets('account-a', 'AGENT', 'active'), { page: 1 }];
+    const currentArchived = [...protectedQueryKeys.tickets('account-a', 'AGENT', 'archived'), { page: 1 }];
+    const currentDetail = protectedQueryKeys.ticket('account-a', 'ticket-1', 'AGENT');
+    const currentWorkload = [...protectedQueryKeys.workload('account-a'), { page: 1 }];
+    const otherAccount = [...protectedQueryKeys.tickets('account-b', 'AGENT', 'active'), { page: 1 }];
+    const otherRole = [...protectedQueryKeys.tickets('account-a', 'ADMIN', 'active'), { page: 1 }];
+
+    [currentActive, currentArchived, currentDetail, protectedQueryKeys.dashboard('account-a'), currentWorkload, [...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary']].forEach((key) => client.setQueryData(key, { value: 'current' }));
+    [otherAccount, otherRole].forEach((key) => client.setQueryData(key, { value: 'other' }));
+
+    await invalidateTicketTransitionQueries(client, 'account-a', 'ticket-1', 'AGENT');
+
+    [currentActive, currentArchived, currentDetail, protectedQueryKeys.dashboard('account-a'), currentWorkload, [...protectedQueryKeys.reports('account-a'), 'AGENT', 'summary']].forEach((key) => {
+      expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    });
+    [otherAccount, otherRole].forEach((key) => expect(client.getQueryState(key)?.isInvalidated).not.toBe(true));
+  });
+
   it('isolates accounts while preserving public data', async () => {
     const client = makeClient();
     client.setQueryData(protectedQueryKeys.ticket('account-a', 'ticket-1'), { owner: 'a' });

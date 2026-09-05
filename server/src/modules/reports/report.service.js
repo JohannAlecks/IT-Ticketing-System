@@ -95,6 +95,7 @@ function dimensionalClauses(filters) {
 
 function ticketWhere(user, filters, range, includePeriod = true) {
   const clauses = [
+    { archivedAt: null },
     user.role === 'AGENT' ? { assignedToId: user.id } : {},
     ...dimensionalClauses(filters),
   ];
@@ -117,12 +118,12 @@ function closedTicketWhere(user, filters, range) {
 }
 
 function historyWhere(user, filters, range, extra = {}) {
-  const ticketClauses = dimensionalClauses(filters);
+  const ticketClauses = [{ archivedAt: null }, ...dimensionalClauses(filters)];
   return {
     AND: [
       { createdAt: { gte: range.from, lt: range.toExclusive } },
       ...Object.entries(extra).map(([key, value]) => ({ [key]: value })),
-      ...(ticketClauses.length ? [{ ticket: { AND: ticketClauses } }] : []),
+      { ticket: { AND: ticketClauses } },
     ],
   };
 }

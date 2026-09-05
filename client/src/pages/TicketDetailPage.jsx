@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Trash2, Mail, ShieldAlert, SearchX } from 'lucide-react';
-import { useTicket, useDeleteTicket } from '../hooks/useTickets';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Archive, ArrowLeft, RotateCcw, Trash2, Mail, ShieldAlert, SearchX } from 'lucide-react';
+import { useTicket, useDeleteTicket, useArchiveTicket, useRestoreTicket } from '../hooks/useTickets';
 import { useAuth } from '../context/AuthContext';
 import Spinner from '../components/ui/Spinner';
 import Button from '../components/ui/Button';
@@ -13,6 +13,7 @@ import CommentList from '../components/tickets/CommentList';
 import CommentForm from '../components/tickets/CommentForm';
 import HistoryTimeline from '../components/tickets/HistoryTimeline';
 import TicketAttachments from '../components/tickets/TicketAttachments';
+import { canArchiveTicket } from '../components/tickets/ticketArchivePolicy';
 import { formatDateTime, shortId } from '../utils/format';
 import { categoryLabel } from '../constants/ticketCategories';
 
@@ -58,14 +59,23 @@ function TicketErrorState({ error }) {
 export default function TicketDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const location = useLocation();
+  const { role, user } = useAuth();
   const { data: ticket, isLoading, isError, error } = useTicket(id);
   const deleteTicket = useDeleteTicket();
+  const archiveTicket = useArchiveTicket(id);
+  const restoreTicket = useRestoreTicket(id);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [tab, setTab] = useState('comments');
 
   if (isLoading) return <Spinner />;
   if (isError || !ticket) return <TicketErrorState error={error} />;
+
+  const isArchived = Boolean(ticket.archivedAt);
+  const canArchive = !isArchived && canArchiveTicket(ticket, role, user?.id);
+  const returnPath = location.state?.from || (isArchived ? '/tickets/archived' : '/tickets');
 
   const handleDelete = () => {
     deleteTicket.mutate(ticket.id, {
@@ -73,14 +83,59 @@ export default function TicketDetailPage() {
     });
   };
 
+  const handleArchive = () => {
+    archiveTicket.mutate(undefined, {
+      onSuccess: () => navigate('/tickets/archived', { replace: true }),
+    });
+  };
+
+  const handleRestore = () => {
+    restoreTicket.mutate(undefined, {
+      onSuccess: () => navigate('/tickets', { replace: true }),
+    });
+  };
+
   return (
     <div className="mx-auto max-w-6xl">
       <button
-        onClick={() => navigate('/tickets')}
+        onClick={() => navigate(returnPath)}
         className="mb-5 flex items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to tickets
+        <ArrowLeft className="h-4 w-4" /> {isArchived ? 'Back to archived work items' : 'Back to tickets'}
       </button>
+
+      {isArchived && (
+        <section className="archived-banner mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900" role="status" aria-labelledby="archived-ticket-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <Archive className="archived-banner-icon mt-0.5 h-5 w-5 flex-none text-amber-700" aria-hidden="true" />
+              <div>
+                <h2 id="archived-ticket-heading" className="text-sm font-semibold">Archived work item</h2>
+                <p className="archived-banner-copy mt-1 max-w-2xl text-sm text-amber-800">This ticket is read-only. Comments, attachments, and activity history are preserved.</p>
+              </div>
+            </div>
+            {role === 'ADMIN' && (
+              <Button variant="secondary" size="sm" onClick={() => setRestoreConfirmOpen(true)}>
+                <RotateCcw className="h-3.5 w-3.5" /> Restore
+              </Button>
+            )}
+          </div>
+          <dl className="archived-banner-meta mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-amber-200 pt-3 text-xs text-amber-800">
+            {ticket.archivedAt && (
+              <div>
+                <dt className="font-semibold uppercase tracking-wide">Archived</dt>
+                <dd className="mt-0.5">{formatDateTime(ticket.archivedAt)}</dd>
+              </div>
+            )}
+            {role === 'ADMIN' && ticket.archivedBy?.name && (
+              <div>
+                <dt className="font-semibold uppercase tracking-wide">Archived by</dt>
+                <dd className="mt-0.5">{ticket.archivedBy.name}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main column */}
@@ -95,6 +150,7 @@ export default function TicketDetailPage() {
                 <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{ticket.title}</h1>
               </div>
               <div className="flex gap-2">
+                {isArchived && <span className="archived-badge inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Archived</span>}
                 <StatusBadge status={ticket.status} />
                 <PriorityBadge priority={ticket.priority} />
               </div>
@@ -119,7 +175,7 @@ export default function TicketDetailPage() {
               <div>
                 <dt className="text-xs text-gray-400">Requester</dt>
                 <dd className="text-gray-700">{ticket.createdBy?.name || '—'}</dd>
-                {ticket.createdBy?.email && (
+                {!isArchived && ticket.createdBy?.email && (
                   <dd className="mt-0.5 flex items-center gap-1 text-xs text-gray-400">
                     <Mail className="h-3 w-3" /> {ticket.createdBy.email}
                   </dd>
@@ -140,11 +196,20 @@ export default function TicketDetailPage() {
               </div>
             </dl>
 
-            {role === 'ADMIN' && (
+            {(canArchive || (role === 'ADMIN' && !isArchived)) && (
               <div className="mt-5 border-t border-gray-100 pt-4">
-                <Button variant="danger" size="sm" onClick={() => setConfirmOpen(true)}>
-                  <Trash2 className="h-3.5 w-3.5" /> Delete ticket
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {canArchive && (
+                    <Button variant="secondary" size="sm" onClick={() => setArchiveConfirmOpen(true)}>
+                      <Archive className="h-3.5 w-3.5" /> Archive ticket
+                    </Button>
+                  )}
+                  {role === 'ADMIN' && !isArchived && (
+                    <Button variant="danger" size="sm" onClick={() => setConfirmOpen(true)}>
+                      <Trash2 className="h-3.5 w-3.5" /> Delete ticket
+                    </Button>
+                  )}
+                </div>
               </div>
             )}</div>
           </div>
@@ -173,9 +238,11 @@ export default function TicketDetailPage() {
             {tab === 'comments' ? (
               <div className="space-y-5">
                 <CommentList comments={ticket.comments} />
-                <div className="border-t border-gray-100 pt-4">
-                  <CommentForm ticketId={ticket.id} />
-                </div>
+                {!isArchived && (
+                  <div className="border-t border-gray-100 pt-4">
+                    <CommentForm ticketId={ticket.id} />
+                  </div>
+                )}
               </div>
             ) : (
               <HistoryTimeline history={ticket.history} />
@@ -183,12 +250,12 @@ export default function TicketDetailPage() {
           </div>
 
           {/* Real attachments — file upload, list, download, delete */}
-          <TicketAttachments ticket={ticket} />
+          <TicketAttachments ticket={ticket} readOnly={isArchived} />
         </div>
 
         {/* Side column */}
         <div className="space-y-6">
-          <TicketControls ticket={ticket} />
+          {!isArchived && <TicketControls ticket={ticket} />}
         </div>
       </div>
 
@@ -201,6 +268,24 @@ export default function TicketDetailPage() {
         isLoading={deleteTicket.isPending}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleDelete}
+      />
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        title="Archive this ticket?"
+        description={`Archive ${shortId(ticket.id)} — ${ticket.title}?\n\nCurrent status: ${ticket.status.replace('_', ' ')}. The ticket will become read-only and move to Archived Work Items. Comments, attachments, and history will be preserved, and an administrator can restore it later.`}
+        confirmLabel="Move to Archived"
+        isLoading={archiveTicket.isPending}
+        onCancel={() => setArchiveConfirmOpen(false)}
+        onConfirm={handleArchive}
+      />
+      <ConfirmDialog
+        open={restoreConfirmOpen}
+        title="Restore this ticket?"
+        description="This ticket will return to active work. Its previous workflow status will be retained, along with its comments, attachments, and history."
+        confirmLabel="Restore to active work"
+        isLoading={restoreTicket.isPending}
+        onCancel={() => setRestoreConfirmOpen(false)}
+        onConfirm={handleRestore}
       />
     </div>
   );

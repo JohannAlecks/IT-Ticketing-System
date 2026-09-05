@@ -39,7 +39,7 @@ test('USER dashboard activity is ticket-scoped and excludes internal-note histor
   expect(prisma.ticketHistory.findMany).toHaveBeenCalledTimes(1);
   expect(prisma.ticketHistory.findMany).toHaveBeenCalledWith(expect.objectContaining({
     where: {
-      ticket: { createdById: 'user-1' },
+      ticket: { createdById: 'user-1', archivedAt: null },
       NOT: { description: { contains: 'internal note' } },
     },
   }));
@@ -49,7 +49,10 @@ test('staff dashboard activity keeps complete history visibility', async () => {
   await dashboardService.getStats({ id: 'admin-1', role: 'ADMIN' });
 
   expect(prisma.ticketHistory.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
-    where: { ticket: {} },
+    where: { ticket: { archivedAt: null } },
+  }));
+  expect(prisma.ticketHistory.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
+    where: { userId: 'admin-1', ticket: { archivedAt: null } },
   }));
 });
 
@@ -59,7 +62,7 @@ test('AGENT personal activity cannot reveal tickets assigned to someone else', a
   expect(prisma.ticketHistory.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
     where: {
       userId: 'agent-1',
-      ticket: { OR: [{ assignedToId: 'agent-1' }, { assignedToId: null }] },
+      ticket: { AND: [{ archivedAt: null }, { OR: [{ assignedToId: 'agent-1' }, { assignedToId: null }] }] },
     },
   }));
 });
@@ -78,10 +81,10 @@ test('USER summary is owner-scoped, has explicit empty state defaults, and uses 
     onboarding: { completedSteps: [], dismissedAt: null, completedAt: null },
   }));
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(1, {
-    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, createdById: 'user-1' },
+    where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, createdById: 'user-1' },
   });
   expect(prisma.ticket.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({
-    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, createdById: 'user-1' },
+    where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, createdById: 'user-1' },
     select: expect.objectContaining({ id: true, title: true, closedAt: true, assignedTo: { select: { id: true, name: true } } }),
   }));
   const select = prisma.ticket.findMany.mock.calls[0][0].select;
@@ -91,14 +94,14 @@ test('USER summary is owner-scoped, has explicit empty state defaults, and uses 
   expect(select).not.toHaveProperty('isWorkBlocking');
   expect(select.assignedTo.select).not.toHaveProperty('email');
   expect(prisma.ticket.findMany).toHaveBeenNthCalledWith(3, expect.objectContaining({
-    where: { status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, createdById: 'user-1' },
+    where: { archivedAt: null, status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, createdById: 'user-1' },
     orderBy: { closedAt: 'desc' },
   }));
   expect(prisma.ticket.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
-    where: { createdById: 'user-1', updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
+    where: { createdById: 'user-1', archivedAt: null, updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
   }));
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(4, expect.objectContaining({
-    where: { status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, createdById: 'user-1' },
+    where: { archivedAt: null, status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, createdById: 'user-1' },
   }));
   expect(prisma.userOnboarding.findUnique).toHaveBeenCalledWith({
     where: { userId: 'user-1' }, select: { completedSteps: true, dismissedAt: true, completedAt: true },
@@ -110,23 +113,23 @@ test('AGENT summary includes only self-assigned work plus eligible unassigned ti
 
   expect(summary.metrics).toEqual({ assignedActive: 0, assignedWorkBlocking: 0, eligibleUnassigned: 0, recentlyUpdatedAssigned: 0, recentlyClosedByMe: 0 });
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(1, {
-    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: 'agent-1' },
+    where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: 'agent-1' },
   });
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(3, {
-    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: null },
+    where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: null },
   });
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(5, expect.objectContaining({
-    where: { status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, assignedToId: 'agent-1' },
+    where: { archivedAt: null, status: 'CLOSED', closedAt: { gte: new Date('2026-08-23T00:00:00.000Z') }, assignedToId: 'agent-1' },
   }));
   expect(prisma.ticket.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
-    where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: null },
+    where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] }, assignedToId: null },
   }));
   expect(prisma.ticket.findMany.mock.calls[1][0].select).not.toHaveProperty('createdBy');
   expect(prisma.ticket.count).toHaveBeenNthCalledWith(4, {
-    where: { assignedToId: 'agent-1', updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
+    where: { assignedToId: 'agent-1', archivedAt: null, updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
   });
   expect(prisma.ticket.findMany).toHaveBeenNthCalledWith(3, expect.objectContaining({
-    where: { assignedToId: 'agent-1', updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
+    where: { assignedToId: 'agent-1', archivedAt: null, updatedAt: { gte: new Date('2026-08-23T00:00:00.000Z') } },
   }));
 });
 
@@ -161,7 +164,7 @@ test('ADMIN summary excludes inactive agents from workload, batches active count
     select: { id: true, name: true, department: true, role: true, isActive: true }, orderBy: { name: 'asc' },
   });
   expect(prisma.ticket.groupBy).toHaveBeenNthCalledWith(4, {
-    by: ['assignedToId', 'status'], where: { status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] } }, _count: { _all: true },
+    by: ['assignedToId', 'status'], where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] } }, _count: { _all: true },
   });
   expect(prisma.auditEvent.findMany).toHaveBeenCalledWith({
     select: { id: true, eventType: true, entityType: true, entityId: true, createdAt: true, actor: { select: { id: true, name: true } } },

@@ -10,6 +10,7 @@ const {
   createTicketSchema,
   updateTicketSchema,
   assignTicketSchema,
+  archiveActionSchema,
   listQuerySchema,
 } = require('./ticket.schema');
 
@@ -25,6 +26,9 @@ router.get('/:id', validateUuidParam('id'), ticketController.getTicket);
 
 router.post('/', validate(createTicketSchema), ticketController.createTicket);
 router.patch('/:id', validateUuidParam('id'), validate(updateTicketSchema), ticketController.updateTicket);
+
+router.patch('/:id/archive', validateUuidParam('id'), validate(archiveActionSchema), ticketController.archiveTicket);
+router.patch('/:id/restore', validateUuidParam('id'), validate(archiveActionSchema), ticketController.restoreTicket);
 
 // Only Agents/Admins assign tickets
 router.patch(

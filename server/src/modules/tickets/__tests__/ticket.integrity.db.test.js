@@ -32,7 +32,7 @@ let ticketReadBarrier = null;
 // this barrier a fast local database may schedule the second request only
 // after the first commit, which tests authorization rather than a stale write.
 prisma.$use(async (params, next) => {
-  if (ticketReadBarrier && params.model === 'Ticket' && params.action === 'findUnique') {
+  if (ticketReadBarrier && params.model === 'Ticket' && ['findUnique', 'findFirst'].includes(params.action)) {
     ticketReadBarrier.reads += 1;
     if (ticketReadBarrier.reads === ticketReadBarrier.target) ticketReadBarrier.release();
     await ticketReadBarrier.ready;
@@ -85,9 +85,10 @@ beforeAll(async () => {
   try {
     await prisma.$queryRaw`SELECT 1`;
     const notificationTable = await prisma.$queryRaw`SELECT to_regclass('public.notifications')::text AS "table"`;
-    if (!notificationTable[0]?.table) {
+    const archiveColumn = await prisma.$queryRaw`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tickets' AND column_name = 'archivedAt') AS "exists"`;
+    if (!notificationTable[0]?.table || !archiveColumn[0]?.exists) {
       databaseAvailable = false;
-      console.warn('[ticket-integrity-db] SKIPPED: apply the notifications migration before running database-backed integrity tests.');
+      console.warn('[ticket-integrity-db] SKIPPED: apply the notifications and ticket-archiving migrations before running database-backed integrity tests.');
     }
   } catch (error) {
     databaseAvailable = false;
@@ -107,6 +108,7 @@ afterEach(async () => {
     });
   }
   if (ticketIds.length) await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
+  if (ticketIds.length) await prisma.auditEvent.deleteMany({ where: { entityType: 'ticket', entityId: { in: ticketIds } } });
   if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 });
 
@@ -170,5 +172,29 @@ describe('database-backed ticket integrity', () => {
     const updated = await ticketService.assignTicket(ticket.id, agent.id, agent);
     expect(updated.assignedToId).toBe(agent.id);
     expect(await prisma.ticketHistory.count({ where: { ticketId: ticket.id, action: 'ASSIGNED' } })).toBe(1);
+  }));
+
+  test('concurrent archive attempts yield one archive transition, one audit, and no notification', async () => runIfDatabaseAvailable(async () => {
+    const requester = await createUser('USER', 'archive-requester');
+    const agent = await createUser('AGENT', 'archive-agent');
+    const ticket = await createTicket(requester, agent.id, 'RESOLVED');
+    const releaseBarrier = holdTicketReads(2);
+    const resultsPromise = Promise.allSettled([
+      ticketService.archiveTicket(ticket.id, agent),
+      ticketService.archiveTicket(ticket.id, agent),
+    ]);
+    // The barrier is released only after both archive transactions have read
+    // the same scoped row, forcing the conditional archive write to arbitrate.
+    while (ticketReadBarrier?.reads < 2) await new Promise((resolve) => setImmediate(resolve));
+    releaseBarrier();
+    const results = await resultsPromise;
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected').reason).toMatchObject({ statusCode: 409 });
+    expect(await prisma.ticketHistory.count({ where: { ticketId: ticket.id, action: 'TICKET_ARCHIVED' } })).toBe(1);
+    expect(await prisma.auditEvent.count({ where: { entityType: 'ticket', entityId: ticket.id, eventType: 'ticket.archived' } })).toBe(1);
+    expect(await prisma.notification.count({ where: { ticketId: ticket.id } })).toBe(0);
+    const archived = await prisma.ticket.findUnique({ where: { id: ticket.id } });
+    expect(archived).toMatchObject({ status: 'RESOLVED', assignedToId: agent.id });
+    expect(archived.archivedAt).toBeInstanceOf(Date);
   }));
 });

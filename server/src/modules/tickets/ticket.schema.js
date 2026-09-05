@@ -16,7 +16,7 @@ const createTicketSchema = z.object({
   category: z.enum(CATEGORY).optional(),
   isWorkBlocking: z.coerce.boolean().optional().default(false),
   impactDescription: impactDescriptionSchema,
-}).superRefine((data, context) => {
+}).strict().superRefine((data, context) => {
   if (data.isWorkBlocking && (!data.impactDescription || data.impactDescription.length < 10)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['impactDescription'], message: 'Explain how this is blocking your work' });
   }
@@ -28,11 +28,13 @@ const updateTicketSchema = z.object({
   status: z.enum(STATUS).optional(),
   priority: z.enum(PRIORITY).optional(),
   category: z.enum(CATEGORY).optional(),
-});
+}).strict();
 
 const assignTicketSchema = z.object({
   assignedToId: z.string().uuid().nullable(), // null = unassign
-});
+}).strict();
+
+const archiveActionSchema = z.object({}).strict();
 
 const listQuerySchema = z.object({
   status: z.enum(STATUS).optional(),
@@ -40,14 +42,16 @@ const listQuerySchema = z.object({
   category: z.enum(CATEGORY).optional(),
   assignedToId: z.string().uuid().optional(),
   search: z.string().optional(),
+  archive: z.enum(['active', 'archived']).optional().default('active'),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-});
+}).strict();
 
 module.exports = {
   createTicketSchema,
   updateTicketSchema,
   assignTicketSchema,
+  archiveActionSchema,
   listQuerySchema,
   STATUS,
   PRIORITY,

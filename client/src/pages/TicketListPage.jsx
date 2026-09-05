@@ -12,8 +12,8 @@ import Button from '../components/ui/Button';
 import { Ticket as TicketIcon } from 'lucide-react';
 
 export default function TicketListPage() {
-  const [filters, setFilters] = useState({ page: 1, limit: 15 });
-  const { data, isLoading, isError } = useTickets(filters);
+  const [filters, setFilters] = useState({ page: 1, limit: 15, archive: 'active' });
+  const { data, isLoading, isError, isFetching, refetch } = useTickets(filters);
 
   return (
     <div className="space-y-5">
@@ -32,7 +32,7 @@ export default function TicketListPage() {
       <TicketFilters filters={filters} onChange={setFilters} />
 
       {isLoading && <Spinner />}
-      {isError && <ErrorState message="Couldn't load tickets." />}
+      {isError && <ErrorState message="Couldn't load active tickets." onRetry={refetch} retrying={isFetching} />}
 
       {data && data.tickets.length === 0 && (
         <EmptyState

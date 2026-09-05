@@ -57,7 +57,7 @@ test('Agent filters ignore admin-only scope fields and every ticket query remain
   const call = prisma.ticket.findMany.mock.calls[0][0];
   expect(call.where).toEqual({
     AND: [
-      { assignedToId: AGENT.id }, { status: 'OPEN' }, { category: 'VPN' }, { priority: 'HIGH' }, { isWorkBlocking: true },
+      { archivedAt: null }, { assignedToId: AGENT.id }, { status: 'OPEN' }, { category: 'VPN' }, { priority: 'HIGH' }, { isWorkBlocking: true },
       { title: { contains: 'vpn', mode: 'insensitive' } }, { createdAt: { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-08-31T00:00:00.000Z') } },
     ],
   });
@@ -75,7 +75,7 @@ test('Admin ticket predicates combine authorized agent and requester department 
   expect(prisma.ticket.findMany).toHaveBeenCalledWith(expect.objectContaining({
     where: {
       AND: [
-        {}, { status: 'PENDING' }, { category: 'SERVER_SYSTEM' }, { priority: 'URGENT' }, { isWorkBlocking: false },
+        { archivedAt: null }, {}, { status: 'PENDING' }, { category: 'SERVER_SYSTEM' }, { priority: 'URGENT' }, { isWorkBlocking: false },
         { assignedToId: OTHER_AGENT }, { createdBy: { department: 'Operations' } },
         { createdAt: { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-08-31T00:00:00.000Z') } },
       ],
@@ -96,10 +96,10 @@ test('Agent summary uses authenticated history attribution, current active statu
   expect(summary.metricNotes.averageResolutionHours).toContain('resolvedAt');
   expect(summary.distributions.byStatus).toEqual({ OPEN: 0, IN_PROGRESS: 0, PENDING: 0, RESOLVED: 0, CLOSED: 0 });
   expect(prisma.ticketHistory.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ AND: expect.arrayContaining([
-    { action: 'ASSIGNED' }, { metadata: { path: ['to'], equals: AGENT.id } },
+    { action: 'ASSIGNED' }, { metadata: { path: ['to'], equals: AGENT.id } }, { ticket: { AND: [{ archivedAt: null }] } },
   ]) }) }));
   expect(prisma.ticketHistory.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ AND: expect.arrayContaining([
-    { action: 'STATUS_CHANGED' }, { userId: AGENT.id }, { metadata: { path: ['to'], equals: 'RESOLVED' } },
+    { action: 'STATUS_CHANGED' }, { userId: AGENT.id }, { ticket: { AND: [{ archivedAt: null }] } }, { metadata: { path: ['to'], equals: 'RESOLVED' } },
   ]) }) }));
   expect(prisma.ticketHistory.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ OR: expect.arrayContaining([
     expect.objectContaining({ AND: expect.arrayContaining([{ metadata: { path: ['to'], equals: 'OPEN' } }, { metadata: { path: ['from'], equals: 'RESOLVED' } }]) }),

@@ -11,10 +11,12 @@
 jest.mock('../../../config/prisma', () => ({
   ticket: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
   },
@@ -35,7 +37,7 @@ jest.mock('../../../config/prisma', () => ({
 const mockPrisma = require('../../../config/prisma');
 const fs = require('fs');
 const ticketService = require('../ticket.service');
-const { listQuerySchema } = require('../ticket.schema');
+const { listQuerySchema, archiveActionSchema, updateTicketSchema } = require('../ticket.schema');
 
 const USER = { id: 'user-1', name: 'Uma User', role: 'USER' };
 const AGENT_A = { id: 'agent-a', name: 'Alex Agent', role: 'AGENT' };
@@ -56,6 +58,7 @@ function baseTicket(overrides = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.ticket.deleteMany.mockResolvedValue({ count: 1 });
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
@@ -207,6 +210,80 @@ describe('closed ticket triage lock', () => {
   });
 });
 
+describe('ticket archiving', () => {
+  test('list queries default to active rows and allow only explicit archived filtering', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([]);
+    mockPrisma.ticket.count.mockResolvedValue(0);
+    await ticketService.listTickets(ADMIN, { page: 1, limit: 20, archive: 'active' });
+    expect(mockPrisma.ticket.findMany.mock.calls[0][0].where.AND).toEqual(expect.arrayContaining([{ archivedAt: null }]));
+    await ticketService.listTickets(ADMIN, { page: 1, limit: 20, archive: 'archived' });
+    expect(mockPrisma.ticket.findMany.mock.calls[1][0].where.AND).toEqual(expect.arrayContaining([{ archivedAt: { not: null } }]));
+    expect(listQuerySchema.safeParse({}).data.archive).toBe('active');
+    expect(listQuerySchema.safeParse({ archive: 'archived' }).success).toBe(true);
+    expect(listQuerySchema.safeParse({ archive: 'all' }).success).toBe(false);
+    expect(listQuerySchema.safeParse({ archive: 'active', unknown: 'field' }).success).toBe(false);
+  });
+
+  test('archive and restore bodies must be empty, and normal ticket PATCH rejects archive fields', () => {
+    expect(archiveActionSchema.safeParse({}).success).toBe(true);
+    expect(archiveActionSchema.safeParse({ ignored: true }).success).toBe(false);
+    expect(updateTicketSchema.safeParse({ archivedAt: '2026-09-02T00:00:00Z' }).success).toBe(false);
+  });
+
+  test('an assigned agent archives a resolved ticket with one history/audit and no notification', async () => {
+    const resolved = baseTicket({ status: 'RESOLVED', assignedToId: AGENT_A.id, updatedAt: new Date('2026-09-02T00:00:00Z') });
+    mockPrisma.ticket.findFirst.mockResolvedValue(resolved);
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...resolved, archivedAt: new Date('2026-09-02T00:01:00Z'), archivedById: AGENT_A.id });
+    await expect(ticketService.archiveTicket('ticket-1', AGENT_A)).resolves.toBeTruthy();
+    expect(mockPrisma.ticket.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ archivedAt: null }) }));
+    expect(mockPrisma.ticketHistory.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'TICKET_ARCHIVED' }) }));
+    expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: 'ticket.archived' }) }));
+    expect(mockPrisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
+  test('duplicates and stale archive writes create neither history nor audit rows', async () => {
+    mockPrisma.ticket.findFirst.mockResolvedValue(baseTicket({ status: 'CLOSED', archivedAt: new Date() }));
+    await expect(ticketService.archiveTicket('ticket-1', ADMIN)).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+    expect(mockPrisma.auditEvent.create).not.toHaveBeenCalled();
+
+    jest.clearAllMocks();
+    mockPrisma.ticket.findFirst.mockResolvedValue(baseTicket({ status: 'CLOSED', updatedAt: new Date() }));
+    mockPrisma.ticket.updateMany.mockResolvedValue({ count: 0 });
+    await expect(ticketService.archiveTicket('ticket-1', ADMIN)).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+    expect(mockPrisma.auditEvent.create).not.toHaveBeenCalled();
+  });
+
+  test('eligibility, restore permission, and invisible archive targets are enforced', async () => {
+    mockPrisma.ticket.findFirst.mockResolvedValue(baseTicket({ status: 'OPEN', assignedToId: AGENT_A.id }));
+    await expect(ticketService.archiveTicket('ticket-1', AGENT_A)).rejects.toMatchObject({ statusCode: 409 });
+    mockPrisma.ticket.findFirst.mockResolvedValue(baseTicket({ status: 'CLOSED', assignedToId: AGENT_A.id, archivedAt: new Date() }));
+    await expect(ticketService.restoreTicket('ticket-1', AGENT_A)).rejects.toMatchObject({ statusCode: 403 });
+    mockPrisma.ticket.findFirst.mockResolvedValue(null);
+    await expect(ticketService.archiveTicket('ticket-1', AGENT_A)).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  test('an admin restore conditionally clears archive state with one restore history/audit pair', async () => {
+    const archived = baseTicket({ status: 'CLOSED', archivedAt: new Date('2026-09-02T00:00:00Z'), archivedById: AGENT_A.id, updatedAt: new Date('2026-09-02T00:00:00Z') });
+    mockPrisma.ticket.findFirst.mockResolvedValue(archived);
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...archived, archivedAt: null, archivedById: null });
+    await expect(ticketService.restoreTicket('ticket-1', ADMIN)).resolves.toBeTruthy();
+    expect(mockPrisma.ticket.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ archivedAt: { not: null } }) }));
+    expect(mockPrisma.ticketHistory.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ action: 'TICKET_RESTORED' }) }));
+    expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ eventType: 'ticket.restored' }) }));
+  });
+
+  test('non-admin ticket payloads retain archivedAt but not archived-by identity', async () => {
+    const archived = baseTicket({ archivedAt: new Date(), archivedById: ADMIN.id, archivedBy: { id: ADMIN.id, name: ADMIN.name } });
+    mockPrisma.ticket.findUnique.mockResolvedValue(archived);
+    const result = await ticketService.getTicketById('ticket-1', USER);
+    expect(result).toEqual(expect.objectContaining({ archivedAt: archived.archivedAt }));
+    expect(result).not.toHaveProperty('archivedById');
+    expect(result).not.toHaveProperty('archivedBy');
+  });
+});
+
 describe('assignTicket — assignment authorization', () => {
   test('AGENT can assign an unassigned ticket to themselves', async () => {
     mockPrisma.ticket.findUnique
@@ -346,20 +423,20 @@ describe('deleteTicket attachment cleanup', () => {
 
   test('validates its attachment inventory before cascading metadata and cleans files afterward', async () => {
     await expect(ticketService.deleteTicket('ticket-1')).resolves.toBeUndefined();
-    expect(mockPrisma.ticket.delete).toHaveBeenCalledWith({ where: { id: 'ticket-1' } });
+    expect(mockPrisma.ticket.deleteMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'ticket-1', archivedAt: null }) }));
     expect(fs.promises.unlink).toHaveBeenCalledTimes(1);
   });
 
   test('aborts without deleting metadata when any attachment path is unsafe', async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue({ ...baseTicket(), attachments: [{ ...ATTACHMENT, storagePath: '..\\outside.txt' }] });
     await expect(ticketService.deleteTicket('ticket-1')).rejects.toMatchObject({ statusCode: 400 });
-    expect(mockPrisma.ticket.delete).not.toHaveBeenCalled();
+    expect(mockPrisma.ticket.deleteMany).not.toHaveBeenCalled();
   });
 
   test('treats already-missing attachment files as safe after the cascade', async () => {
     fs.promises.unlink.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }));
     await expect(ticketService.deleteTicket('ticket-1')).resolves.toBeUndefined();
-    expect(mockPrisma.ticket.delete).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.ticket.deleteMany).toHaveBeenCalledTimes(1);
     expect(mockPrisma.auditEvent.create).not.toHaveBeenCalled();
   });
 

@@ -4,19 +4,7 @@ const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { resolveUploadPath } = require('../../middleware/upload');
 const { recordAudit } = require('../audit/audit.service');
-
-// Reused verbatim from ticket.service.js / comment.service.js: an AGENT may
-// only act on tickets that are unassigned or already theirs. Duplicated as
-// a small helper here rather than importing across modules, since these
-// two services intentionally don't depend on each other.
-function assertTicketVisible(ticket, user) {
-  if (user.role === 'USER' && ticket.createdById !== user.id) {
-    throw new AppError('You do not have access to this ticket', 403);
-  }
-  if (user.role === 'AGENT' && ticket.assignedToId && ticket.assignedToId !== user.id) {
-    throw new AppError('You do not have access to this ticket', 403);
-  }
-}
+const { assertTicketVisible, assertTicketIsActive, lockActiveTicketForMutation } = require('../tickets/ticket.access');
 
 async function listAttachments(ticketId, user) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
@@ -39,38 +27,49 @@ async function uploadAttachment(ticketId, file, user) {
     fs.unlink(file.path, () => {});
     throw new AppError('Ticket not found', 404);
   }
-
   try {
     assertTicketVisible(ticket, user);
+    assertTicketIsActive(ticket);
   } catch (err) {
     fs.unlink(file.path, () => {});
     throw err;
   }
 
-  return prisma.$transaction(async (tx) => {
-    const attachment = await tx.ticketAttachment.create({
-      data: {
-        ticketId,
-        uploadedById: user.id,
-        originalFileName: file.originalname,
-        storagePath: path.basename(file.path), // store only the generated filename, not an absolute path
-        mimeType: file.mimetype,
-        fileSize: file.size,
-      },
-      include: { uploadedBy: { select: { id: true, name: true, role: true } } },
-    });
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const currentTicket = await tx.ticket.findUnique({ where: { id: ticketId } });
+      if (!currentTicket) throw new AppError('Ticket not found', 404);
+      assertTicketVisible(currentTicket, user);
+      await lockActiveTicketForMutation(tx, currentTicket);
+      const attachment = await tx.ticketAttachment.create({
+        data: {
+          ticketId,
+          uploadedById: user.id,
+          originalFileName: file.originalname,
+          storagePath: path.basename(file.path), // store only the generated filename, not an absolute path
+          mimeType: file.mimetype,
+          fileSize: file.size,
+        },
+        include: { uploadedBy: { select: { id: true, name: true, role: true } } },
+      });
 
-    await tx.ticketHistory.create({
-      data: {
-        ticketId,
-        userId: user.id,
-        action: 'ATTACHMENT_ADDED',
-        description: `${user.name} attached ${file.originalname}`,
-      },
-    });
+      await tx.ticketHistory.create({
+        data: {
+          ticketId,
+          userId: user.id,
+          action: 'ATTACHMENT_ADDED',
+          description: `${user.name} attached ${file.originalname}`,
+        },
+      });
 
-    return attachment;
-  });
+      return attachment;
+    });
+  } catch (error) {
+    // This is only the newly uploaded file; existing attachment data/files
+    // are never touched when an archived-state or authorization guard rejects.
+    fs.unlink(file.path, () => {});
+    throw error;
+  }
 }
 
 async function getAttachmentForDownload(ticketId, attachmentId, user) {
@@ -117,6 +116,10 @@ async function deleteAttachment(ticketId, attachmentId, user) {
   const absolutePath = resolveUploadPath(attachment.storagePath);
 
   await prisma.$transaction(async (tx) => {
+    const currentTicket = await tx.ticket.findUnique({ where: { id: ticketId } });
+    if (!currentTicket) throw new AppError('Ticket not found', 404);
+    assertTicketVisible(currentTicket, user);
+    await lockActiveTicketForMutation(tx, currentTicket);
     await tx.ticketAttachment.delete({ where: { id: attachmentId } });
     await tx.ticketHistory.create({
       data: {

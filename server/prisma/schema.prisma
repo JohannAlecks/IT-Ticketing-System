@@ -57,6 +57,8 @@ enum ActivityAction {
   CLOSED
   ATTACHMENT_ADDED
   ATTACHMENT_DELETED
+  TICKET_ARCHIVED
+  TICKET_RESTORED
 }
 
 enum KnowledgeArticleStatus {
@@ -105,6 +107,7 @@ model User {
 
   ticketsCreated            Ticket[]                 @relation("TicketCreatedBy")
   ticketsAssigned           Ticket[]                 @relation("TicketAssignedTo")
+  ticketsArchived           Ticket[]                 @relation("TicketArchivedBy")
   comments                  Comment[]
   activities                TicketHistory[]
   attachments               TicketAttachment[]
@@ -216,6 +219,10 @@ model Ticket {
   assignedToId String?
   assignedTo   User?   @relation("TicketAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
 
+  archivedAt   DateTime?
+  archivedById String?
+  archivedBy   User?     @relation("TicketArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   closedAt  DateTime?
@@ -229,6 +236,7 @@ model Ticket {
   @@index([category])
   @@index([createdById])
   @@index([assignedToId])
+  @@index([archivedAt])
   @@index([status, priority])
   @@index([createdAt])
   @@map("tickets")

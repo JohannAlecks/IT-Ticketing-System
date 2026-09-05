@@ -30,10 +30,20 @@ const assignTicket = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { ticket } });
 });
 
+const archiveTicket = asyncHandler(async (req, res) => {
+  const ticket = await ticketService.archiveTicket(req.params.id, req.user);
+  res.status(200).json({ success: true, data: { ticket } });
+});
+
+const restoreTicket = asyncHandler(async (req, res) => {
+  const ticket = await ticketService.restoreTicket(req.params.id, req.user);
+  res.status(200).json({ success: true, data: { ticket } });
+});
+
 const deleteTicket = asyncHandler(async (req, res) => {
   await ticketService.deleteTicket(req.params.id, { actorUserId: req.user.id, requestId: req.requestId });
   void recordAudit({ eventType: 'ticket.deleted', entityType: 'ticket', entityId: req.params.id, actorUserId: req.user.id, requestId: req.requestId });
   res.status(204).send();
 });
 
-module.exports = { listTickets, getTicket, createTicket, updateTicket, assignTicket, deleteTicket };
+module.exports = { listTickets, getTicket, createTicket, updateTicket, assignTicket, archiveTicket, restoreTicket, deleteTicket };

@@ -4,6 +4,7 @@ const fs = require('fs');
 const { resolveUploadPath } = require('../../middleware/upload');
 const { recordAudit } = require('../audit/audit.service');
 const { writeNotifications, ticketReference, statusLabel, eventEntry } = require('../notifications/notification.service');
+const { buildTicketVisibilityFilter, assertTicketVisible, assertTicketIsActive } = require('./ticket.access');
 
 function ticketInclude(user) {
   return {
@@ -13,6 +14,7 @@ function ticketInclude(user) {
         ? { id: true, name: true }
         : { id: true, name: true, email: true },
     },
+    ...(user.role === 'ADMIN' ? { archivedBy: { select: { id: true, name: true } } } : {}),
     _count: {
       select: {
         comments: user.role === 'USER' ? { where: { isInternal: false } } : true,
@@ -37,20 +39,19 @@ const ALLOWED_TRANSITIONS = {
  * - AGENT: sees tickets assigned to them, or unassigned tickets (so they can pick up work)
  * - ADMIN: sees everything
  */
-function buildVisibilityFilter(user) {
-  if (user.role === 'ADMIN') return {};
-  if (user.role === 'AGENT') {
-    return { OR: [{ assignedToId: user.id }, { assignedToId: null }] };
-  }
-  return { createdById: user.id };
+function exposeTicket(ticket, user) {
+  if (!ticket || user.role === 'ADMIN') return ticket;
+  const { archivedById, archivedBy, ...visibleTicket } = ticket;
+  return visibleTicket;
 }
 
 async function listTickets(user, query) {
-  const { status, priority, category, assignedToId, search, page, limit } = query;
+  const { status, priority, category, assignedToId, search, archive, page, limit } = query;
 
   const where = {
     AND: [
-      buildVisibilityFilter(user),
+      buildTicketVisibilityFilter(user),
+      archive === 'archived' ? { archivedAt: { not: null } } : { archivedAt: null },
       status ? { status } : {},
       priority ? { priority } : {},
       category ? { category } : {},
@@ -78,7 +79,7 @@ async function listTickets(user, query) {
   ]);
 
   return {
-    tickets,
+    tickets: tickets.map((ticket) => exposeTicket(ticket, user)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
@@ -115,20 +116,8 @@ async function getTicketById(id, user) {
 
   if (!ticket) throw new AppError('Ticket not found', 404);
 
-  // Enforce visibility: a plain USER cannot fetch someone else's ticket by ID
-  if (user.role === 'USER' && ticket.createdById !== user.id) {
-    throw new AppError('You do not have access to this ticket', 403);
-  }
-
-  // An AGENT may only fetch tickets that are visible to them per the same
-  // rule the list endpoint uses: assigned to them, or unassigned. Without
-  // this, an agent could bypass the list filter entirely by guessing/
-  // following a direct ticket URL for another agent's ticket.
-  if (user.role === 'AGENT' && ticket.assignedToId && ticket.assignedToId !== user.id) {
-    throw new AppError('You do not have access to this ticket', 403);
-  }
-
-  return ticket;
+  assertTicketVisible(ticket, user);
+  return exposeTicket(ticket, user);
 }
 
 async function createTicket(data, user) {
@@ -189,13 +178,11 @@ async function updateTicket(id, data, user) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.ticket.findUnique({ where: { id } });
     if (!existing) throw new AppError('Ticket not found', 404);
+    assertTicketVisible(existing, user);
+    assertTicketIsActive(existing);
 
     if (user.role === 'USER') {
-      if (existing.createdById !== user.id) throw new AppError('You do not have access to this ticket', 403);
       if (data.status || data.priority) throw new AppError('Only agents or admins can change status or priority', 403);
-    }
-    if (user.role === 'AGENT' && existing.assignedToId && existing.assignedToId !== user.id) {
-      throw new AppError('You do not have access to this ticket', 403);
     }
     if (existing.status === 'CLOSED' && data.priority) {
       throw new AppError('This ticket is closed. Reopen it before changing priority.', 422);
@@ -219,7 +206,7 @@ async function updateTicket(id, data, user) {
     }
 
     const result = await tx.ticket.updateMany({
-      where: { id, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt },
+      where: { id, archivedAt: null, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt },
       data: { ...data, closedAt: data.status === 'CLOSED' ? new Date() : data.status ? null : undefined },
     });
     if (result.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
@@ -239,7 +226,7 @@ async function updateTicket(id, data, user) {
         })),
       });
     }
-    return updated;
+    return exposeTicket(updated, user);
   });
 }
 
@@ -247,6 +234,8 @@ async function assignTicket(id, assignedToId, user) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.ticket.findUnique({ where: { id } });
     if (!existing) throw new AppError('Ticket not found', 404);
+    assertTicketVisible(existing, user);
+    assertTicketIsActive(existing);
     if (existing.status === 'CLOSED') throw new AppError('This ticket is closed. Reopen it before changing assignment.', 422);
 
     if (assignedToId) {
@@ -256,15 +245,14 @@ async function assignTicket(id, assignedToId, user) {
       }
     }
     if (user.role === 'AGENT') {
-      if (existing.assignedToId && existing.assignedToId !== user.id) throw new AppError('You do not have access to this ticket', 403);
       if (assignedToId && assignedToId !== user.id) throw new AppError('Agents can only assign tickets to themselves', 403);
     }
     if ((existing.assignedToId || null) === (assignedToId || null)) {
-      return tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) });
+      return exposeTicket(await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) }), user);
     }
 
     const result = await tx.ticket.updateMany({
-      where: { id, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt },
+      where: { id, archivedAt: null, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt },
       data: { assignedToId },
     });
     if (result.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
@@ -285,9 +273,73 @@ async function assignTicket(id, assignedToId, user) {
         ...(existing.assignedToId ? [eventEntry({ recipientId: existing.assignedToId, type: 'TICKET_UNASSIGNED', ticketId: id, title: 'Ticket unassigned', message: `You are no longer assigned to ticket ${ticketReference(id)}.`, eventId: `${id}:${existing.assignedToId}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}` })] : []),
       ],
     });
-    return updated;
+    return exposeTicket(updated, user);
   });
 }
+
+function archiveMetadata(timestamp, archived) {
+  return {
+    previous: { archived: !archived, archivedAt: archived ? null : timestamp?.toISOString() || null },
+    current: { archived, archivedAt: archived ? timestamp.toISOString() : null },
+  };
+}
+
+async function setArchivedState(id, user, archived) {
+  return prisma.$transaction(async (tx) => {
+    // Scope this lookup to the normal visibility rule. An invisible ticket
+    // intentionally has the same response as a missing ticket.
+    const ticket = await tx.ticket.findFirst({
+      where: { AND: [{ id }, buildTicketVisibilityFilter(user)] },
+    });
+    if (!ticket) throw new AppError('Ticket not found', 404);
+    if (user.role === 'USER') throw new AppError('You do not have permission to archive tickets', 403);
+    if (!archived && user.role !== 'ADMIN') throw new AppError('You do not have permission to restore tickets', 403);
+    if (Boolean(ticket.archivedAt) === archived) {
+      throw new AppError(archived ? 'Ticket is already archived' : 'Ticket is not archived', 409);
+    }
+    if (archived && !['RESOLVED', 'CLOSED'].includes(ticket.status)) {
+      throw new AppError('Only resolved or closed tickets can be archived', 409);
+    }
+    if (archived && user.role === 'AGENT' && ticket.assignedToId !== user.id) {
+      throw new AppError('Agents can only archive tickets assigned to themselves', 403);
+    }
+
+    const timestamp = archived ? new Date() : ticket.archivedAt;
+    const result = await tx.ticket.updateMany({
+      where: {
+        id,
+        updatedAt: ticket.updatedAt,
+        ...(archived ? { archivedAt: null } : { archivedAt: { not: null } }),
+      },
+      data: archived ? { archivedAt: timestamp, archivedById: user.id } : { archivedAt: null, archivedById: null },
+    });
+    if (result.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
+
+    const metadata = archiveMetadata(timestamp, archived);
+    await tx.ticketHistory.create({
+      data: {
+        ticketId: id,
+        userId: user.id,
+        action: archived ? 'TICKET_ARCHIVED' : 'TICKET_RESTORED',
+        description: `${user.name} ${archived ? 'archived' : 'restored'} this ticket`,
+        metadata,
+      },
+    });
+    await tx.auditEvent.create({
+      data: {
+        eventType: archived ? 'ticket.archived' : 'ticket.restored',
+        entityType: 'ticket',
+        entityId: id,
+        actorUserId: user.id,
+        metadata,
+      },
+    });
+    return exposeTicket(await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) }), user);
+  });
+}
+
+const archiveTicket = (id, user) => setArchivedState(id, user, true);
+const restoreTicket = (id, user) => setArchivedState(id, user, false);
 
 async function deleteTicket(id, auditContext = {}) {
   const attachments = await prisma.$transaction(async (tx) => {
@@ -296,10 +348,12 @@ async function deleteTicket(id, auditContext = {}) {
       include: { attachments: { select: { id: true, storagePath: true, originalFileName: true } } },
     });
     if (!existing) throw new AppError('Ticket not found', 404);
+    assertTicketIsActive(existing);
     // All paths must be valid before the cascade removes any attachment
     // metadata. This prevents an unsafe row from producing a partial delete.
     const inventory = existing.attachments.map((attachment) => ({ ...attachment, absolutePath: resolveUploadPath(attachment.storagePath) }));
-    await tx.ticket.delete({ where: { id } });
+    const deleted = await tx.ticket.deleteMany({ where: { id, archivedAt: null, updatedAt: existing.updatedAt } });
+    if (deleted.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
     return inventory;
   });
 
@@ -330,5 +384,7 @@ module.exports = {
   createTicket,
   updateTicket,
   assignTicket,
+  archiveTicket,
+  restoreTicket,
   deleteTicket,
 };

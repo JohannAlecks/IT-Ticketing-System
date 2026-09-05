@@ -21,7 +21,7 @@ function canDelete(attachment, ticket, user, role) {
   return false;
 }
 
-export default function TicketAttachments({ ticket }) {
+export default function TicketAttachments({ ticket, readOnly = false }) {
   const { user, role } = useAuth();
   const { data: attachments, isLoading, isError } = useAttachments(ticket.id);
   const uploadMutation = useUploadAttachment(ticket.id);
@@ -106,14 +106,16 @@ export default function TicketAttachments({ ticket }) {
                   onClick={() => downloadAttachment(ticket.id, a)}
                   className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
                   title="Download"
+                  aria-label={`Download ${a.originalFileName}`}
                 >
                   <Download className="h-4 w-4" />
                 </button>
-                {canDelete(a, ticket, user, role) && (
+                {!readOnly && canDelete(a, ticket, user, role) && (
                   <button
                     onClick={() => setPendingDeleteId(a.id)}
                     className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600"
                     title="Delete"
+                    aria-label={`Delete ${a.originalFileName}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -124,42 +126,47 @@ export default function TicketAttachments({ ticket }) {
         </ul>
       )}
 
-      <div className="border-t border-gray-100 pt-4">
-        <label className="mb-1.5 block text-sm font-medium text-gray-700">Add attachment</label>
-        <div className="flex flex-wrap items-center gap-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleFileChange}
-            className="block flex-1 text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200"
-          />
-          <Button
-            size="sm"
-            disabled={!selectedFile || !!clientError}
-            isLoading={uploadMutation.isPending}
-            onClick={handleUpload}
-          >
-            <Upload className="h-3.5 w-3.5" /> Upload
-          </Button>
-        </div>
-
-        {selectedFile && !clientError && (
-          <p className="mt-1.5 text-xs text-gray-500">
-            {selectedFile.name} · {formatFileSize(selectedFile.size)}
-          </p>
-        )}
-        {clientError && <p className="mt-1.5 text-xs text-red-600">{clientError}</p>}
-
-        {uploadMutation.isPending && progress > 0 && (
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-            <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progress}%` }} />
+      {!readOnly ? (
+        <div className="border-t border-gray-100 pt-4">
+          <label htmlFor="ticket-attachment-input" className="mb-1.5 block text-sm font-medium text-gray-700">Add attachment</label>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              id="ticket-attachment-input"
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFileChange}
+              className="block flex-1 text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-gray-700 hover:file:bg-gray-200"
+            />
+            <Button
+              size="sm"
+              disabled={!selectedFile || !!clientError}
+              isLoading={uploadMutation.isPending}
+              onClick={handleUpload}
+            >
+              <Upload className="h-3.5 w-3.5" /> Upload
+            </Button>
           </div>
-        )}
 
-        <p className="mt-2 text-xs text-gray-400">
-          Max 5 MB. Supported: images, PDF, Word, Excel, TXT, CSV, ZIP.
-        </p>
-      </div>
+          {selectedFile && !clientError && (
+            <p className="mt-1.5 text-xs text-gray-500">
+              {selectedFile.name} · {formatFileSize(selectedFile.size)}
+            </p>
+          )}
+          {clientError && <p className="mt-1.5 text-xs text-red-600">{clientError}</p>}
+
+          {uploadMutation.isPending && progress > 0 && (
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          )}
+
+          <p className="mt-2 text-xs text-gray-400">
+            Max 5 MB. Supported: images, PDF, Word, Excel, TXT, CSV, ZIP.
+          </p>
+        </div>
+      ) : (
+        <p className="border-t border-gray-100 pt-4 text-xs text-gray-400">Archived work items are read-only. Downloads remain available.</p>
+      )}
 
       <ConfirmDialog
         open={pendingDeleteId !== null}

@@ -57,6 +57,8 @@ export default function TicketControls({ ticket }) {
   // legal, independent of whether this dialog was shown or skipped.
   const [pendingCloseStatus, setPendingCloseStatus] = useState(null);
 
+  if (ticket.archivedAt) return null;
+
   const handleStatusChange = (newStatus) => {
     if (newStatus === ticket.status) return;
     if (newStatus === 'CLOSED') {

@@ -7,5 +7,7 @@ export const ticketsApi = {
   update: (id, payload) => api.patch(`/tickets/${id}`, payload).then((r) => r.data.data.ticket),
   assign: (id, assignedToId) =>
     api.patch(`/tickets/${id}/assign`, { assignedToId }).then((r) => r.data.data.ticket),
+  archive: (id) => api.patch(`/tickets/${id}/archive`, {}).then((r) => r.data.data.ticket),
+  restore: (id) => api.patch(`/tickets/${id}/restore`, {}).then((r) => r.data.data.ticket),
   remove: (id) => api.delete(`/tickets/${id}`),
 };

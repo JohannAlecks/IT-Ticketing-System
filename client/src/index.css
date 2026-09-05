@@ -106,3 +106,15 @@ html[data-theme='dark'] .notification-preferences-empty { background-color: #0f1
 html[data-theme='dark'] .notification-feedback-error { background-color: rgb(127 29 29 / 20%); border-color: rgb(248 113 113 / 35%); color: #fecaca; }
 html[data-theme='dark'] .notification-feedback-error-text { color: #fca5a5; }
 html[data-theme='dark'] .notification-feedback-success { color: #86efac; }
+
+html[data-theme='dark'] .archived-banner {
+  background-color: rgb(232 184 102 / 10%);
+  border-color: rgb(232 184 102 / 35%);
+  color: #fef3c7;
+}
+html[data-theme='dark'] .archived-banner-copy,
+html[data-theme='dark'] .archived-banner-meta { color: #f3d49a; }
+html[data-theme='dark'] .archived-banner-meta { border-color: rgb(232 184 102 / 30%); }
+html[data-theme='dark'] .archived-banner-icon,
+html[data-theme='dark'] .archived-badge { color: #fcd34d; }
+html[data-theme='dark'] .archived-badge { border-color: rgb(252 211 77 / 40%); background-color: rgb(232 184 102 / 12%); }

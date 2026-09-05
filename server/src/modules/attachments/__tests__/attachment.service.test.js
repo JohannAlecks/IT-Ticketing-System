@@ -1,5 +1,5 @@
 jest.mock('../../../config/prisma', () => ({
-  ticket: { findUnique: jest.fn() },
+  ticket: { findUnique: jest.fn(), updateMany: jest.fn() },
   ticketAttachment: { findUnique: jest.fn(), delete: jest.fn() },
   ticketHistory: { create: jest.fn() },
   auditEvent: { create: jest.fn() },
@@ -26,12 +26,26 @@ beforeEach(() => {
   mockPrisma.ticketAttachment.findUnique.mockResolvedValue(ATTACHMENT);
   mockPrisma.ticketAttachment.delete.mockResolvedValue(ATTACHMENT);
   mockPrisma.auditEvent.create.mockResolvedValue({ id: 'audit-1' });
+  mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
   jest.spyOn(fs.promises, 'unlink').mockResolvedValue();
 });
 
 afterEach(() => jest.restoreAllMocks());
 
 describe('deleteAttachment storage cleanup', () => {
+  test('archived tickets still allow authorized attachment downloads', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...TICKET, archivedAt: new Date() });
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+    await expect(attachmentService.getAttachmentForDownload(TICKET.id, ATTACHMENT.id, USER)).resolves.toEqual(expect.objectContaining({ attachment: ATTACHMENT }));
+  });
+
+  test('archived tickets reject attachment deletion before metadata/history changes', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...TICKET, archivedAt: new Date() });
+    await expect(attachmentService.deleteAttachment(TICKET.id, ATTACHMENT.id, USER)).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.ticketAttachment.delete).not.toHaveBeenCalled();
+    expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+  });
+
   test('deletes metadata, history, and its validated storage file', async () => {
     await expect(attachmentService.deleteAttachment(TICKET.id, ATTACHMENT.id, USER)).resolves.toBeUndefined();
     expect(mockPrisma.ticketAttachment.delete).toHaveBeenCalledWith({ where: { id: ATTACHMENT.id } });

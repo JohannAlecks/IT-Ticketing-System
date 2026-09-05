@@ -29,7 +29,7 @@ export function useAgentWorkload() {
   const { role, user } = useAuth();
   const userId = user?.id;
   return useQuery({
-    queryKey: [...protectedQueryKeys.dashboard(userId), 'agent-workload'],
+    queryKey: protectedQueryKeys.workload(userId),
     queryFn: ({ signal }) => dashboardApi.getAgentWorkload(signal),
     enabled: !!userId && role === 'ADMIN', // backend also enforces this — this just avoids a wasted 403 call
   });

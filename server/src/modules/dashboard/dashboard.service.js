@@ -54,15 +54,15 @@ function summaryEnvelope(user, generatedAt, onboarding, body) {
 }
 
 function activeWhere(extra = {}) {
-  return { status: { in: ACTIVE_STATUSES }, ...extra };
+  return { archivedAt: null, status: { in: ACTIVE_STATUSES }, ...extra };
 }
 
 function closedWithin(cutoff, extra = {}) {
-  return { status: 'CLOSED', closedAt: { gte: cutoff }, ...extra };
+  return { archivedAt: null, status: 'CLOSED', closedAt: { gte: cutoff }, ...extra };
 }
 
 async function getUserSummary(user, cutoff, generatedAt) {
-  const own = { createdById: user.id };
+  const own = { createdById: user.id, archivedAt: null };
   const [active, workBlocking, recentlyCreated, recentlyClosed, byStatus, activeTickets, recentTickets, recentClosedTickets, onboarding] = await Promise.all([
     prisma.ticket.count({ where: activeWhere(own) }),
     prisma.ticket.count({ where: activeWhere({ ...own, isWorkBlocking: true }) }),
@@ -83,8 +83,8 @@ async function getUserSummary(user, cutoff, generatedAt) {
 }
 
 async function getAgentSummary(user, cutoff, generatedAt) {
-  const assigned = { assignedToId: user.id };
-  const unassigned = { assignedToId: null };
+  const assigned = { assignedToId: user.id, archivedAt: null };
+  const unassigned = { assignedToId: null, archivedAt: null };
   const [assignedActive, assignedWorkBlocking, eligibleUnassigned, recentlyUpdatedAssigned, recentlyClosedByMe, byStatus, priorityQueue, unassignedTickets, recentlyUpdated, onboarding] = await Promise.all([
     prisma.ticket.count({ where: activeWhere(assigned) }),
     prisma.ticket.count({ where: activeWhere({ ...assigned, isWorkBlocking: true }) }),
@@ -107,17 +107,17 @@ async function getAgentSummary(user, cutoff, generatedAt) {
 
 async function getAdminSummary(user, cutoff, generatedAt) {
   const [totalTickets, activeTickets, unassignedActive, workBlockingActive, recentlyCreated, recentlyClosed, activeAgents, inactiveUsers, byStatus, byCategory, requesterVolumes, activeTicketCounts, priorityQueue, recentAudit, onboarding] = await Promise.all([
-    prisma.ticket.count({ where: {} }),
+    prisma.ticket.count({ where: { archivedAt: null } }),
     prisma.ticket.count({ where: activeWhere() }),
     prisma.ticket.count({ where: activeWhere({ assignedToId: null }) }),
     prisma.ticket.count({ where: activeWhere({ isWorkBlocking: true }) }),
-    prisma.ticket.count({ where: { createdAt: { gte: cutoff } } }),
+    prisma.ticket.count({ where: { archivedAt: null, createdAt: { gte: cutoff } } }),
     prisma.ticket.count({ where: closedWithin(cutoff) }),
     prisma.user.count({ where: { role: 'AGENT', isActive: true } }),
     prisma.user.count({ where: { isActive: false } }),
-    prisma.ticket.groupBy({ by: ['status'], where: {}, _count: { _all: true } }),
-    prisma.ticket.groupBy({ by: ['category'], where: {}, _count: { _all: true } }),
-    prisma.ticket.groupBy({ by: ['createdById'], where: {}, _count: { _all: true } }),
+    prisma.ticket.groupBy({ by: ['status'], where: { archivedAt: null }, _count: { _all: true } }),
+    prisma.ticket.groupBy({ by: ['category'], where: { archivedAt: null }, _count: { _all: true } }),
+    prisma.ticket.groupBy({ by: ['createdById'], where: { archivedAt: null }, _count: { _all: true } }),
     prisma.ticket.groupBy({ by: ['assignedToId', 'status'], where: activeWhere(), _count: { _all: true } }),
     prisma.ticket.findMany({ where: activeWhere(), select: ticketListSelect, orderBy: [{ isWorkBlocking: 'desc' }, { priority: 'desc' }, { updatedAt: 'desc' }], take: 8 }),
     prisma.auditEvent.findMany({ select: { id: true, eventType: true, entityType: true, entityId: true, createdAt: true, actor: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 8 }),
@@ -186,9 +186,9 @@ async function getSummary(user) {
 // Dashboard should reflect only *their own* workload — tickets actually
 // assigned to them.
 function buildDashboardFilter(user) {
-  if (user.role === 'ADMIN') return {};
-  if (user.role === 'AGENT') return { assignedToId: user.id };
-  return { createdById: user.id };
+  if (user.role === 'ADMIN') return { archivedAt: null };
+  if (user.role === 'AGENT') return { assignedToId: user.id, archivedAt: null };
+  return { createdById: user.id, archivedAt: null };
 }
 
 async function getStats(user) {
@@ -237,9 +237,9 @@ async function getStats(user) {
       ? prisma.ticketHistory.findMany({
           where: {
             userId: user.id,
-            ...(user.role === 'AGENT'
-              ? { ticket: { OR: [{ assignedToId: user.id }, { assignedToId: null }] } }
-              : {}),
+            ticket: user.role === 'AGENT'
+              ? { AND: [{ archivedAt: null }, { OR: [{ assignedToId: user.id }, { assignedToId: null }] }] }
+              : { archivedAt: null },
           },
           include: { ticket: { select: { id: true, title: true } } },
           orderBy: { createdAt: 'desc' },
@@ -279,7 +279,7 @@ async function getAgentWorkload() {
     agents.map(async (agent) => {
       const byStatus = await prisma.ticket.groupBy({
         by: ['status'],
-        where: { assignedToId: agent.id },
+        where: { assignedToId: agent.id, archivedAt: null },
         _count: { _all: true },
       });
       const statusCounts = byStatus.reduce((acc, row) => {

@@ -1,5 +1,5 @@
 jest.mock('../../../config/prisma', () => ({
-  ticket: { findUnique: jest.fn() },
+  ticket: { findUnique: jest.fn(), updateMany: jest.fn() },
   user: { findMany: jest.fn() },
   notification: { createMany: jest.fn() },
   notificationPreference: { findMany: jest.fn() },
@@ -25,6 +25,7 @@ beforeEach(() => {
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
+  mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
 });
 
 describe('listComments — internal note visibility', () => {
@@ -57,6 +58,13 @@ describe('listComments — internal note visibility', () => {
 });
 
 describe('addComment — internal note authorization', () => {
+  test('archived tickets reject comment creation before any comment/history write', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket({ archivedAt: new Date() }));
+    await expect(commentService.addComment('ticket-1', { content: 'hi', isInternal: false }, USER)).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.comment.create).not.toHaveBeenCalled();
+    expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+  });
+
   test('USER cannot post an internal note', async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket());
     await expect(

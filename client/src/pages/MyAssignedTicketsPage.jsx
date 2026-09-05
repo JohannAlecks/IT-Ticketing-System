@@ -18,15 +18,15 @@ const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 // can be picked up), this is purely "my active workload".
 export default function MyAssignedTicketsPage() {
   const { user } = useAuth();
-  const [filters, setFilters] = useState({ page: 1, limit: 15 });
+  const [filters, setFilters] = useState({ page: 1, limit: 15, archive: 'active' });
 
   const query = { ...filters, assignedToId: user?.id };
-  const { data, isLoading, isError } = useTickets(query);
+  const { data, isLoading, isError, isFetching, refetch } = useTickets(query);
 
   // Lightweight summary counts computed from the current filtered result set's
   // pagination total isn't per-status, so we fetch small unfiltered counts by
   // reusing the same query without status filter for the summary row.
-  const { data: allMine } = useTickets({ page: 1, limit: 100, assignedToId: user?.id });
+  const { data: allMine } = useTickets({ page: 1, limit: 100, assignedToId: user?.id, archive: 'active' });
   const summary = (allMine?.tickets || []).reduce(
     (acc, t) => {
       acc.total += 1;
@@ -94,7 +94,7 @@ export default function MyAssignedTicketsPage() {
       </div>
 
       {isLoading && <Spinner />}
-      {isError && <ErrorState message="Couldn't load your assigned tickets." />}
+      {isError && <ErrorState message="Couldn't load your active assigned tickets." onRetry={refetch} retrying={isFetching} />}
 
       {data && data.tickets.length === 0 && (
         <EmptyState icon={Inbox} title="Nothing assigned to you right now" description="Pick up an unassigned ticket from the main Tickets list." />

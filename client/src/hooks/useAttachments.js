@@ -26,10 +26,10 @@ export function validateFile(file) {
 }
 
 export function useAttachments(ticketId) {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const userId = user?.id;
   return useQuery({
-    queryKey: protectedQueryKeys.attachments(userId, ticketId),
+    queryKey: protectedQueryKeys.attachments(userId, ticketId, role),
     queryFn: ({ signal }) => attachmentsApi.list(ticketId, signal),
     enabled: !!userId && !!ticketId,
   });
@@ -37,14 +37,14 @@ export function useAttachments(ticketId) {
 
 export function useUploadAttachment(ticketId) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const userId = user?.id;
   return useMutation({
-    mutationKey: protectedMutationKeys.attachment(userId, 'upload', ticketId),
+    mutationKey: protectedMutationKeys.attachment(userId, 'upload', ticketId, role),
     mutationFn: ({ file, onUploadProgress }) => attachmentsApi.upload(ticketId, file, onUploadProgress),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.attachments(userId, ticketId) });
-      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.ticket(userId, ticketId) }); // history tab shows the new entry
+      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.attachments(userId, ticketId, role) });
+      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.ticket(userId, ticketId, role) }); // history tab shows the new entry
       toast.success('Attachment uploaded');
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Upload failed'),
@@ -53,14 +53,14 @@ export function useUploadAttachment(ticketId) {
 
 export function useDeleteAttachment(ticketId) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const userId = user?.id;
   return useMutation({
-    mutationKey: protectedMutationKeys.attachment(userId, 'delete', ticketId),
+    mutationKey: protectedMutationKeys.attachment(userId, 'delete', ticketId, role),
     mutationFn: (attachmentId) => attachmentsApi.remove(ticketId, attachmentId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.attachments(userId, ticketId) });
-      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.ticket(userId, ticketId) });
+      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.attachments(userId, ticketId, role) });
+      queryClient.invalidateQueries({ queryKey: protectedQueryKeys.ticket(userId, ticketId, role) });
       toast.success('Attachment removed');
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to remove attachment'),
