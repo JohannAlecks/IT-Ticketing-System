@@ -26,6 +26,26 @@ beforeEach(() => {
 
 afterEach(() => jest.useRealTimers());
 
+test('SLA report counts immutable resolution outcomes, includes archived history, and scopes agent metrics', async () => {
+  const { filters, range } = reportService.normalizeFilters(AGENT, {});
+  prisma.ticket.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1).mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+  prisma.ticketHistory.count.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+  const result = await reportService.slaMetrics(AGENT, filters, range);
+  expect(result.firstResponse).toEqual({ eligible: 2, met: 1, breached: 1, compliancePercent: 50 });
+  expect(result.resolution).toEqual({ eligible: 3, met: 2, breached: 1, compliancePercent: 66.67 });
+  const where = prisma.ticketHistory.count.mock.calls[0][0].where;
+  expect(JSON.stringify(where)).toContain('SLA resolution completed');
+  expect(JSON.stringify(where)).toContain(AGENT.id);
+  expect(JSON.stringify(where)).not.toContain('archivedAt');
+  expect(JSON.stringify(prisma.ticket.count.mock.calls[2][0])).toContain('archivedAt');
+});
+test('SLA empty denominators remain unknown rather than reporting 100 percent compliance', async () => {
+  const { filters, range } = reportService.normalizeFilters(ADMIN, {});
+  const result = await reportService.slaMetrics(ADMIN, filters, range);
+  expect(result.firstResponse.compliancePercent).toBeNull();
+  expect(result.resolution.compliancePercent).toBeNull();
+});
+
 test('query schemas enforce strict valid UTC calendar dates and pagination bounds', () => {
   expect(reportQuerySchema.safeParse({ from: '2026-02-28', to: '2026-03-01' }).success).toBe(true);
   expect(reportQuerySchema.safeParse({ from: '2026-02-30' }).success).toBe(false);

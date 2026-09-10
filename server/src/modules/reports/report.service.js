@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { ACTIVE_STATUSES, TICKET_STATUSES, TICKET_CATEGORIES, TICKET_PRIORITIES } = require('./report.definitions');
+const { slaFilterWhere, TIME_MODEL } = require('../sla/sla.engine');
 
 const MAX_RANGE_DAYS = 366;
 const MAX_TREND_EVENTS = 10000;
@@ -105,6 +106,42 @@ function ticketWhere(user, filters, range, includePeriod = true) {
 
 function activeTicketWhere(user, filters, range) {
   return { AND: [...ticketWhere(user, filters, range, false).AND, { status: { in: ACTIVE_STATUSES } }] };
+}
+
+function slaCompletedWhere(user, filters, range, completedField) {
+  const clauses = [
+    { slaPolicyId: { not: null } },
+    { [completedField]: { not: null } },
+    user.role === 'AGENT' ? { assignedToId: user.id } : {},
+    ...dimensionalClauses(filters),
+    { [completedField]: { gte: range.from, lt: range.toExclusive } },
+  ];
+  // Archived tickets remain eligible only once a milestone has completed.
+  return { AND: clauses };
+}
+
+async function slaMetrics(user, filters, range, now = new Date()) {
+  const first = slaCompletedWhere(user, filters, range, 'firstRespondedAt');
+  // Immutable completion events keep earlier cycles eligible after reopening.
+  const resolution = { AND: [
+    { ticket: { AND: [{ slaPolicyId: { not: null } }, user.role === 'AGENT' ? { assignedToId: user.id } : {}, ...dimensionalClauses(filters)] } },
+    { createdAt: { gte: range.from, lt: range.toExclusive } },
+    { description: 'SLA resolution completed' },
+    { metadata: { path: ['slaEvent'], equals: 'resolution completed' } },
+  ] };
+  const [firstEligible, firstBreached, resolutionEligible, resolutionBreached, dueSoon, breached] = await Promise.all([
+    prisma.ticket.count({ where: first }),
+    prisma.ticket.count({ where: { AND: [...first.AND, { firstResponseBreachedAt: { not: null } }] } }),
+    prisma.ticketHistory.count({ where: resolution }),
+    prisma.ticketHistory.count({ where: { AND: [...resolution.AND, { metadata: { path: ['state'], equals: 'COMPLETED_BREACHED' } }] } }),
+    prisma.ticket.count({ where: { AND: [...activeTicketWhere(user, filters, range).AND, slaFilterWhere('DUE_SOON', now)] } }),
+    prisma.ticket.count({ where: { AND: [...activeTicketWhere(user, filters, range).AND, slaFilterWhere('BREACHED', now)] } }),
+  ]);
+  const metric = (eligible, breachedCount) => {
+    const met = eligible - breachedCount;
+    return { eligible, met, breached: breachedCount, compliancePercent: eligible ? Number(((met / eligible) * 100).toFixed(2)) : null };
+  };
+  return { firstResponse: metric(firstEligible, firstBreached), resolution: metric(resolutionEligible, resolutionBreached), dueSoon, breached, timeModel: TIME_MODEL };
 }
 
 function closedTicketWhere(user, filters, range) {
@@ -235,6 +272,7 @@ async function getAgentSummary(user, filters, range, generatedAt) {
   ]);
   const resolved = resolvedEvents.filter((event) => isResolution(event.metadata));
   const reopened = reopenedEvents.filter((event) => isReopen(event.metadata)).length;
+  const sla = await slaMetrics(user, filters, range, generatedAt);
   return envelope(user, generatedAt, filters, range, {
     metrics: { assignedDuring, resolvedByMe: resolved.length, activeAssigned, workBlockingActive, reopened, averageResolutionHours: null },
     metricNotes: {
@@ -249,6 +287,7 @@ async function getAgentSummary(user, filters, range, generatedAt) {
       byStatus: zeroCounts(TICKET_STATUSES, byStatus, 'status'),
       byCategory: zeroCounts(TICKET_CATEGORIES, byCategory, 'category'),
     },
+    sla,
   });
 }
 
@@ -315,6 +354,7 @@ async function getAdminSummary(user, filters, range, generatedAt) {
     existing.count += 1;
     activities.set(actor.id, existing);
   }
+  const sla = await slaMetrics(user, filters, range, generatedAt);
   return envelope(user, generatedAt, filters, range, {
     metrics: {
       created, closed, active, workBlocking, reopened: reopenedEvents.filter((event) => isReopen(event.metadata)).length,
@@ -349,6 +389,7 @@ async function getAdminSummary(user, filters, range, generatedAt) {
       agents: agents.map(({ id, name }) => ({ id, name })),
       departments: [...new Set(departments.map((row) => row.department && row.department.trim()).filter(Boolean))],
     },
+    sla,
   });
 }
 
@@ -456,6 +497,8 @@ module.exports = {
   normalizeFilters,
   ticketWhere,
   activeTicketWhere,
+  slaCompletedWhere,
+  slaMetrics,
   closedTicketWhere,
   historyWhere,
   sanitizeCsvText,

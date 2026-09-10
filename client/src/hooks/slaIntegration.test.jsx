@@ -1,0 +1,65 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { useDashboardSummary } from './useDashboard';
+import { useAddComment } from './useComments';
+import { useUpdateSlaPolicy } from './useSla';
+import { clearProtectedCache, protectedQueryKeys as keys } from '../query/protectedCache';
+import { dashboardApi } from '../api/dashboard.api';
+import { commentsApi } from '../api/comments.api';
+import { slaApi } from '../api/sla.api';
+import SlaReportMetrics from '../components/reports/SlaReportMetrics';
+const auth = vi.hoisted(() => ({ user: { id: 'a' }, role: 'ADMIN' }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+vi.mock('../api/dashboard.api', () => ({ dashboardApi: { getSummary: vi.fn() } }));
+vi.mock('../api/comments.api', () => ({ commentsApi: { add: vi.fn() } }));
+vi.mock('../api/sla.api', () => ({ slaApi: { updatePolicy: vi.fn() } }));
+vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
+const client = () => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+const wrapper = (queryClient) => ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+beforeEach(() => { vi.clearAllMocks(); auth.user = { id: 'a' }; auth.role = 'ADMIN'; });
+afterEach(() => cleanup());
+
+it('role changes cannot reuse an Admin summary and polling reconciles every minute', async () => {
+  const queryClient = client();
+  dashboardApi.getSummary.mockResolvedValue({ role: 'ADMIN', sla: { breached: 2 } });
+  const { result, rerender } = renderHook(() => useDashboardSummary(), { wrapper: wrapper(queryClient) });
+  await waitFor(() => expect(result.current.data?.role).toBe('ADMIN'));
+  dashboardApi.getSummary.mockReturnValue(new Promise(() => {}));
+  auth.role = 'USER'; rerender();
+  expect(result.current.data).toBeUndefined();
+  expect(queryClient.getQueryCache().find({ queryKey: [...keys.dashboard('a'), 'USER', 'summary'] }).options.refetchInterval).toBe(60000);
+  queryClient.clear();
+});
+it('public-reply completion invalidates ticket/Summary/Reports only for its account', async () => {
+  const queryClient = client();
+  const affected = [keys.tickets('a', 'ADMIN'), keys.dashboard('a'), keys.reports('a')];
+  affected.forEach((key) => queryClient.setQueryData(key, {}));
+  queryClient.setQueryData(keys.reports('b'), {});
+  commentsApi.add.mockResolvedValue({ id: 'reply' });
+  const { result } = renderHook(() => useAddComment('ticket'), { wrapper: wrapper(queryClient) });
+  await act(async () => result.current.mutateAsync({ content: 'reply', isInternal: false }));
+  affected.forEach((key) => expect(queryClient.getQueryState(key).isInvalidated).toBe(true));
+  expect(queryClient.getQueryState(keys.reports('b')).isInvalidated).toBe(false);
+  queryClient.clear();
+});
+it('a late policy save cannot repopulate protected cache after logout', async () => {
+  const queryClient = client();
+  const key = keys.slaPolicies('a', 'ADMIN');
+  queryClient.setQueryData(key, { policies: [{ id: 'policy', version: 1 }] });
+  let finish;
+  slaApi.updatePolicy.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const { result } = renderHook(() => useUpdateSlaPolicy(), { wrapper: wrapper(queryClient) });
+  act(() => result.current.mutate({ id: 'policy', payload: { version: 1 } }));
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await clearProtectedCache(queryClient);
+  await act(async () => finish({ id: 'policy', version: 2 }));
+  expect(queryClient.getQueryData(key)).toBeUndefined();
+  queryClient.clear();
+});
+it('unknown compliance remains unavailable rather than zero percent', () => {
+  const metric = { eligible: 0, met: 0, breached: 0, compliancePercent: null };
+  render(<SlaReportMetrics sla={{ firstResponse: metric, resolution: metric, dueSoon: 0, breached: 0 }} />);
+  expect(screen.getAllByText('Not available')).toHaveLength(2);
+  expect(screen.queryByText('0%')).not.toBeInTheDocument();
+});

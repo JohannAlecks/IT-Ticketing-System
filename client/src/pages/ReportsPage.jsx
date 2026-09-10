@@ -11,6 +11,7 @@ import {
 import ReportsFilters from '../components/reports/ReportsFilters';
 import ReportMetricCard from '../components/reports/ReportMetricCard';
 import ReportOperations from '../components/reports/ReportOperations';
+import SlaReportMetrics from '../components/reports/SlaReportMetrics';
 import ReportsTable from '../components/reports/ReportsTable';
 import ReportTrend from '../components/reports/ReportTrend';
 import { ReportsEmptyState, ReportsErrorState, ReportsLoadingState } from '../components/reports/ReportsStates';
@@ -465,6 +466,8 @@ export default function ReportsPage() {
       <ActiveFilterSummary filters={committedFilters} role={isAdmin ? 'ADMIN' : 'AGENT'} />
 
       <ReportMetrics role={isAdmin ? 'ADMIN' : 'AGENT'} summary={summary} />
+
+      <SlaReportMetrics sla={summary.sla} />
 
       <ReportTrend role={isAdmin ? 'ADMIN' : 'AGENT'} trends={summary?.trends} />
 

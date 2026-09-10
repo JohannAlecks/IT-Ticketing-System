@@ -50,6 +50,13 @@ const adminSummary = {
     currentWorkload: [{ agent: { id: 'agent-1', name: 'Avery Agent' }, activeAssigned: 4 }],
     resolutionActivity: [{ periodStart: '2026-08-30', resolved: 15 }],
   },
+  sla: {
+    firstResponse: { eligible: 10, met: 8, breached: 2, compliancePercent: 80 },
+    resolution: { eligible: 6, met: 5, breached: 1, compliancePercent: 83.33 },
+    dueSoon: 3,
+    breached: 2,
+    timeModel: '24/7 elapsed time',
+  },
 };
 
 const ticketRows = [{
@@ -103,6 +110,16 @@ describe('ReportsPage', () => {
     expect(screen.getByText('Not available')).toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Resolved by me: 8' })).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: 'Resolved on Aug 30, 2026: 8' })).toBeInTheDocument();
+  });
+
+  it('renders server-calculated SLA metrics for the applied role and filters', () => {
+    renderPage({ ...agentSummary, sla: adminSummary.sla }, 'AGENT');
+
+    expect(screen.getByRole('heading', { name: 'SLA performance' })).toBeInTheDocument();
+    expect(screen.getByText('First-response SLA')).toBeInTheDocument();
+    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('83.33%')).toBeInTheDocument();
+    expect(screen.getByText('Tickets without an applicable SLA are excluded from eligible compliance totals.')).toBeInTheDocument();
   });
 
   it('renders the Admin heading, filter options, admin distributions, and operations', () => {

@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import PriorityBadge from '../tickets/PriorityBadge';
 import StatusBadge from '../tickets/StatusBadge';
+import SlaBadge from '../sla/SlaBadge';
 import { formatDateTime } from '../../utils/format';
 import { DashboardEmptyState } from './DashboardStates';
 
@@ -25,6 +27,8 @@ export default function TicketList({
   emptyDescription = 'There are no tickets to show in this list.',
   emptyAction,
 }) {
+  const { role } = useAuth();
+  const canSeeSla = role === 'AGENT' || role === 'ADMIN';
   const rows = Array.isArray(tickets) ? tickets : [];
   const headingId = id || undefined;
 
@@ -58,6 +62,7 @@ export default function TicketList({
                   <span className="flex shrink-0 flex-wrap justify-end gap-1">
                     {ticket.status && <StatusBadge status={ticket.status} />}
                     {ticket.priority && <PriorityBadge priority={ticket.priority} />}
+                    {canSeeSla && <SlaBadge sla={ticket.sla} role={role} showCountdown />}
                   </span>
                 </Link>
               </li>

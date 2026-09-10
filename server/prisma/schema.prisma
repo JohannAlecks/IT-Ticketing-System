@@ -83,6 +83,15 @@ enum NotificationType {
   KNOWLEDGE_PUBLISHED
   KNOWLEDGE_RETURNED
   ACCOUNT_REACTIVATED
+  SLA_FIRST_RESPONSE_DUE_SOON
+  SLA_FIRST_RESPONSE_BREACHED
+  SLA_RESOLUTION_DUE_SOON
+  SLA_RESOLUTION_BREACHED
+}
+
+enum PendingReason {
+  WAITING_FOR_REQUESTER
+  OTHER
 }
 
 // ─────────────────────────────────────────────
@@ -164,6 +173,7 @@ model NotificationPreference {
   knowledgeSubmitted  Boolean  @default(true)
   knowledgePublished  Boolean  @default(true)
   knowledgeReturned   Boolean  @default(true)
+  slaDueSoon          Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -227,6 +237,28 @@ model Ticket {
   updatedAt DateTime  @updatedAt
   closedAt  DateTime?
 
+  // SLA is intentionally a per-ticket snapshot: pre-migration tickets stay
+  // null, and later policy edits cannot rewrite historic targets.
+  slaPolicyId                  String?
+  slaPolicyName                String?
+  slaFirstResponseMinutes      Int?
+  slaResolutionMinutes         Int?
+  slaDueSoonMinutes            Int?
+  firstResponseDueAt           DateTime?
+  firstResponseDueSoonAt       DateTime?
+  firstRespondedAt             DateTime?
+  firstResponseBreachedAt      DateTime?
+  resolutionCycleStartedAt     DateTime?
+  resolutionDueAt              DateTime?
+  resolutionDueSoonAt          DateTime?
+  resolutionCompletedAt        DateTime?
+  resolutionBreachedAt         DateTime?
+  resolutionPausedAt           DateTime?
+  resolutionPausedSeconds      Int            @default(0)
+  resolutionPausedMilliseconds Float          @default(0)
+  slaVersion                   Int            @default(0)
+  pendingReason                PendingReason?
+
   comments    Comment[]
   history     TicketHistory[]
   attachments TicketAttachment[]
@@ -239,7 +271,25 @@ model Ticket {
   @@index([archivedAt])
   @@index([status, priority])
   @@index([createdAt])
+  @@index([archivedAt, status, firstResponseDueAt])
+  @@index([archivedAt, status, resolutionDueAt])
+  @@index([archivedAt, status, resolutionPausedAt])
   @@map("tickets")
+}
+
+model SlaPolicy {
+  id                   String         @id @default(uuid())
+  name                 String         @db.VarChar(100)
+  priority             TicketPriority @unique
+  firstResponseMinutes Int
+  resolutionMinutes    Int
+  dueSoonMinutes       Int
+  isActive             Boolean        @default(true)
+  version              Int            @default(1)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@map("sla_policies")
 }
 
 model Comment {
@@ -268,8 +318,10 @@ model TicketHistory {
   ticketId String
   ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SLA sweeps are automated events and therefore have no human actor.
+  // SetNull retains history if an account is later removed.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   description String
   metadata    Json?

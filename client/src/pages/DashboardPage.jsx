@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, CircleDot, Clock, Plus, Ticket, User, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleDot, Clock, Plus, Ticket, TimerReset, User, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDashboardSummary } from '../hooks/useDashboard';
 import MetricCard from '../components/dashboard/MetricCard';
@@ -80,6 +80,22 @@ const ROLE_METRICS = {
     { key: 'inactiveUsers', label: 'Inactive users', icon: User, tone: 'slate' },
   ],
 };
+
+function SlaSummaryMetrics({ summary }) {
+  if (!summary?.sla || typeof summary.sla !== 'object') return null;
+  return (
+    <section aria-labelledby="summary-sla-heading">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="summary-sla-heading" className="eyebrow">SLA workload</h2>
+        <p className="text-xs text-slate-500">Active assigned/service-desk tickets</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <MetricCard label="SLA due soon" value={summary.sla.dueSoon} icon={TimerReset} tone="amber" />
+        <MetricCard label="SLA breached" value={summary.sla.breached} icon={AlertTriangle} tone="red" />
+      </div>
+    </section>
+  );
+}
 
 function normalizeRole(role) {
   return typeof role === 'string' ? role.toUpperCase() : '';
@@ -221,6 +237,7 @@ function AgentSummary({ summary, windowDays }) {
   return (
     <>
       <MetricGrid role="AGENT" metrics={summary.metrics} windowDays={windowDays} />
+      <SlaSummaryMetrics summary={summary} />
       <div className="grid gap-4 lg:grid-cols-2">
         <DistributionList
           id="agent-status-distribution"
@@ -292,6 +309,7 @@ function AdminSummary({ summary, windowDays }) {
   return (
     <>
       <MetricGrid role="ADMIN" metrics={summary.metrics} windowDays={windowDays} />
+      <SlaSummaryMetrics summary={summary} />
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <DistributionList
           id="admin-status-distribution"

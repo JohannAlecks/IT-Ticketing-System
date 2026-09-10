@@ -40,7 +40,10 @@ test('USER dashboard activity is ticket-scoped and excludes internal-note histor
   expect(prisma.ticketHistory.findMany).toHaveBeenCalledWith(expect.objectContaining({
     where: {
       ticket: { createdById: 'user-1', archivedAt: null },
-      NOT: { description: { contains: 'internal note' } },
+      AND: [
+        { NOT: { description: { contains: 'internal note' } } },
+        { NOT: { description: { in: require('../../sla/sla.engine').SLA_HISTORY_DESCRIPTIONS } } },
+      ],
     },
   }));
 });
@@ -56,12 +59,16 @@ test('staff dashboard activity keeps complete history visibility', async () => {
   }));
 });
 
-test('AGENT personal activity cannot reveal tickets assigned to someone else', async () => {
+test('AGENT personal activity excludes other assignments and unassigned internal SLA history', async () => {
   await dashboardService.getStats({ id: 'agent-1', role: 'AGENT' });
 
   expect(prisma.ticketHistory.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({
     where: {
       userId: 'agent-1',
+      OR: [
+        { ticket: { assignedToId: 'agent-1' } },
+        { NOT: { description: { in: require('../../sla/sla.engine').SLA_HISTORY_DESCRIPTIONS } } },
+      ],
       ticket: { AND: [{ archivedAt: null }, { OR: [{ assignedToId: 'agent-1' }, { assignedToId: null }] }] },
     },
   }));

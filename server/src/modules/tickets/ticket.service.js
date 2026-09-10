@@ -5,6 +5,7 @@ const { resolveUploadPath } = require('../../middleware/upload');
 const { recordAudit } = require('../audit/audit.service');
 const { writeNotifications, ticketReference, statusLabel, eventEntry } = require('../notifications/notification.service');
 const { buildTicketVisibilityFilter, assertTicketVisible, assertTicketIsActive } = require('./ticket.access');
+const { ACTIVE_STATUSES, SLA_HISTORY_DESCRIPTIONS, createSnapshot, staffPayload, requesterPayload, resolutionDueForPolicy, addMinutes, addMilliseconds, secondsBetween, slaFilterWhere } = require('../sla/sla.engine');
 
 function ticketInclude(user) {
   return {
@@ -39,14 +40,35 @@ const ALLOWED_TRANSITIONS = {
  * - AGENT: sees tickets assigned to them, or unassigned tickets (so they can pick up work)
  * - ADMIN: sees everything
  */
-function exposeTicket(ticket, user) {
-  if (!ticket || user.role === 'ADMIN') return ticket;
-  const { archivedById, archivedBy, ...visibleTicket } = ticket;
-  return visibleTicket;
+function exposeTicket(ticket, user, now = new Date()) {
+  if (!ticket) return ticket;
+  const {
+    archivedById, archivedBy,
+    slaPolicyId, slaPolicyName, slaFirstResponseMinutes, slaResolutionMinutes, slaDueSoonMinutes,
+    firstResponseDueAt, firstResponseDueSoonAt, firstRespondedAt, firstResponseBreachedAt,
+    resolutionCycleStartedAt, resolutionDueAt, resolutionDueSoonAt, resolutionCompletedAt,
+    resolutionBreachedAt, resolutionPausedAt, resolutionPausedSeconds, resolutionPausedMilliseconds, slaVersion, pendingReason,
+    ...visibleTicket
+  } = ticket;
+  const rawSla = { slaPolicyId, slaPolicyName, slaFirstResponseMinutes, slaResolutionMinutes, slaDueSoonMinutes, firstResponseDueAt, firstResponseDueSoonAt, firstRespondedAt, firstResponseBreachedAt, resolutionCycleStartedAt, resolutionDueAt, resolutionDueSoonAt, resolutionCompletedAt, resolutionBreachedAt, resolutionPausedAt, resolutionPausedSeconds, resolutionPausedMilliseconds, slaVersion, pendingReason, archivedAt: ticket.archivedAt, status: ticket.status };
+  const canSeeStaffSla = user.role === 'ADMIN' || (user.role === 'AGENT' && ticket.assignedToId === user.id);
+  if (!canSeeStaffSla && Array.isArray(visibleTicket.history)) {
+    visibleTicket.history = visibleTicket.history.filter((entry) => !entry.metadata?.slaEvent && !SLA_HISTORY_DESCRIPTIONS.includes(entry.description));
+  }
+  return {
+    ...visibleTicket,
+    ...(['AGENT', 'ADMIN'].includes(user.role) ? { pendingReason: pendingReason || null } : {}),
+    ...(user.role === 'USER' || user.role === 'AGENT' ? {} : { archivedById, archivedBy }),
+    sla: user.role === 'USER' ? requesterPayload(rawSla, now) : (canSeeStaffSla ? staffPayload(rawSla, now) : null),
+  };
 }
 
 async function listTickets(user, query) {
-  const { status, priority, category, assignedToId, search, archive, page, limit } = query;
+  const { status, priority, category, assignedToId, search, archive, page, limit, slaState, department } = query;
+  if (slaState && user.role === 'USER') throw new AppError('SLA filters are not available for requesters', 403);
+  if (department && user.role !== 'ADMIN') throw new AppError('Department filtering is only available to administrators', 403);
+  if (slaState && user.role === 'AGENT' && assignedToId && assignedToId !== user.id) throw new AppError('Agents can only filter their assigned SLA work', 403);
+  const now = new Date();
 
   const where = {
     AND: [
@@ -56,6 +78,9 @@ async function listTickets(user, query) {
       priority ? { priority } : {},
       category ? { category } : {},
       assignedToId ? { assignedToId } : {},
+      ...(slaState && user.role === 'AGENT' ? [{ assignedToId: user.id }] : []),
+      ...(slaState ? [slaFilterWhere(slaState, now)] : []),
+      ...(department && user.role === 'ADMIN' ? [{ createdBy: { department } }] : []),
       search
         ? {
             OR: [
@@ -79,7 +104,7 @@ async function listTickets(user, query) {
   ]);
 
   return {
-    tickets: tickets.map((ticket) => exposeTicket(ticket, user)),
+    tickets: tickets.map((ticket) => exposeTicket(ticket, user, now)),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
@@ -107,7 +132,12 @@ async function getTicketById(id, user) {
         // without seeing its content — history rows for internal notes are
         // identified by their description text (TicketHistory has no
         // isInternal column of its own; the comment does).
-        where: user.role === 'USER' ? { NOT: { description: { contains: 'internal note' } } } : undefined,
+        where: user.role === 'USER' ? {
+          AND: [
+            { NOT: { description: { contains: 'internal note' } } },
+            { NOT: { description: { in: SLA_HISTORY_DESCRIPTIONS } } },
+          ],
+        } : undefined,
         include: { user: { select: { id: true, name: true, role: true } } },
         orderBy: { createdAt: 'desc' },
       },
@@ -133,6 +163,8 @@ async function createTicket(data, user) {
     : (data.priority || (isWorkBlocking ? 'HIGH' : 'MEDIUM'));
 
   return prisma.$transaction(async (tx) => {
+    const createdAt = new Date();
+    const policy = await tx.slaPolicy.findFirst({ where: { priority, isActive: true }, select: { id: true, name: true, firstResponseMinutes: true, resolutionMinutes: true, dueSoonMinutes: true, isActive: true } });
     const ticket = await tx.ticket.create({
       data: {
         title: data.title,
@@ -142,6 +174,8 @@ async function createTicket(data, user) {
         isWorkBlocking,
         impactDescription,
         createdById: user.id,
+        createdAt,
+        ...(policy ? createSnapshot(policy, createdAt) : {}),
       },
       include: ticketInclude(user),
     });
@@ -170,7 +204,7 @@ async function createTicket(data, user) {
       });
     }
 
-    return ticket;
+    return exposeTicket(ticket, user, createdAt);
   });
 }
 
@@ -182,7 +216,7 @@ async function updateTicket(id, data, user) {
     assertTicketIsActive(existing);
 
     if (user.role === 'USER') {
-      if (data.status || data.priority) throw new AppError('Only agents or admins can change status or priority', 403);
+      if (data.status || data.priority || Object.prototype.hasOwnProperty.call(data, 'pendingReason')) throw new AppError('Only agents or admins can change status or priority', 403);
     }
     if (existing.status === 'CLOSED' && data.priority) {
       throw new AppError('This ticket is closed. Reopen it before changing priority.', 422);
@@ -194,6 +228,15 @@ async function updateTicket(id, data, user) {
       }
     }
 
+    const nextStatus = data.status || existing.status;
+    const pendingReasonProvided = Object.prototype.hasOwnProperty.call(data, 'pendingReason');
+    const nextPendingReason = pendingReasonProvided ? data.pendingReason : existing.pendingReason;
+    // Leaving PENDING clears a previously stored reason.  Only an explicitly
+    // supplied non-null reason is invalid outside the PENDING workflow.
+    if (nextStatus !== 'PENDING' && pendingReasonProvided && nextPendingReason !== null) {
+      throw new AppError('A pending reason is only valid while a ticket is pending', 422);
+    }
+
     const historyEntries = [];
     if (data.status && data.status !== existing.status) {
       historyEntries.push({ ticketId: id, userId: user.id, action: 'STATUS_CHANGED', description: `${user.name} changed status from ${existing.status} to ${data.status}`, metadata: { from: existing.status, to: data.status } });
@@ -201,18 +244,126 @@ async function updateTicket(id, data, user) {
     if (data.priority && data.priority !== existing.priority) {
       historyEntries.push({ ticketId: id, userId: user.id, action: 'PRIORITY_CHANGED', description: `${user.name} changed priority from ${existing.priority} to ${data.priority}`, metadata: { from: existing.priority, to: data.priority } });
     }
-    if (Object.keys(data).some((key) => !['status', 'priority'].includes(key))) {
+    if (Object.keys(data).some((key) => !['status', 'priority', 'pendingReason'].includes(key))) {
       historyEntries.push({ ticketId: id, userId: user.id, action: 'UPDATED', description: `${user.name} updated ticket details` });
     }
 
+    const now = new Date();
+    const updateData = { ...data, pendingReason: nextStatus === 'PENDING' ? (nextPendingReason || null) : null, closedAt: data.status === 'CLOSED' ? now : data.status ? null : undefined };
+    const auditEvents = [];
+    const slaHistory = (event, metadata) => historyEntries.push({ ticketId: id, userId: metadata.automated ? null : user.id, action: 'UPDATED', description: `SLA ${event}`, metadata: { visibility: 'internal', slaEvent: event, ...metadata } });
+    const responseCrossed = ACTIVE_STATUSES.includes(existing.status) && existing.slaPolicyId && !existing.firstRespondedAt && existing.firstResponseDueAt && now > new Date(existing.firstResponseDueAt);
+    const resolutionCrossed = ACTIVE_STATUSES.includes(existing.status) && existing.slaPolicyId && !existing.resolutionCompletedAt && !existing.resolutionPausedAt && existing.resolutionDueAt && now > new Date(existing.resolutionDueAt);
+    if (responseCrossed && !existing.firstResponseBreachedAt) {
+      updateData.firstResponseBreachedAt = existing.firstResponseDueAt;
+      auditEvents.push({ eventType: 'sla.milestone_breached', entityType: 'ticket', entityId: id, actorUserId: null, metadata: { milestone: 'firstResponse', detectedDuring: 'ticket_update' } });
+      slaHistory('first response breached', { automated: true, detectedDuring: 'ticket_update' });
+    }
+    if (resolutionCrossed && !existing.resolutionBreachedAt) {
+      updateData.resolutionBreachedAt = existing.resolutionDueAt;
+      auditEvents.push({ eventType: 'sla.milestone_breached', entityType: 'ticket', entityId: id, actorUserId: null, metadata: { milestone: 'resolution', detectedDuring: 'ticket_update' } });
+      slaHistory('resolution breached', { automated: true, detectedDuring: 'ticket_update' });
+    }
+    let priorityPolicy = null;
+    if (data.priority && data.priority !== existing.priority && existing.slaPolicyId) {
+      priorityPolicy = await tx.slaPolicy.findFirst({ where: { priority: data.priority, isActive: true }, select: { id: true, name: true, firstResponseMinutes: true, resolutionMinutes: true, dueSoonMinutes: true, isActive: true } });
+      if (priorityPolicy) {
+        if (!existing.firstRespondedAt) {
+          updateData.slaPolicyId = priorityPolicy.id;
+          updateData.slaPolicyName = priorityPolicy.name;
+          updateData.slaFirstResponseMinutes = priorityPolicy.firstResponseMinutes;
+          updateData.slaDueSoonMinutes = priorityPolicy.dueSoonMinutes;
+          updateData.firstResponseDueAt = addMinutes(existing.createdAt, priorityPolicy.firstResponseMinutes);
+          updateData.firstResponseDueSoonAt = addMinutes(existing.createdAt, priorityPolicy.firstResponseMinutes - priorityPolicy.dueSoonMinutes);
+        }
+        if (!existing.resolutionCompletedAt) {
+          updateData.slaPolicyId = priorityPolicy.id;
+          updateData.slaPolicyName = priorityPolicy.name;
+          updateData.slaResolutionMinutes = priorityPolicy.resolutionMinutes;
+          updateData.slaDueSoonMinutes = priorityPolicy.dueSoonMinutes;
+          updateData.resolutionDueAt = resolutionDueForPolicy(existing, priorityPolicy, now);
+          updateData.resolutionDueSoonAt = addMilliseconds(updateData.resolutionDueAt, -priorityPolicy.dueSoonMinutes * 60_000);
+        }
+        auditEvents.push({ eventType: 'sla.deadlines_recalculated', entityType: 'ticket', entityId: id, actorUserId: user.id, metadata: { reason: 'priority_changed', priority: data.priority } });
+        slaHistory('deadlines recalculated', { reason: 'priority_changed', priority: data.priority });
+      }
+    }
+
+    const wasWaiting = existing.status === 'PENDING' && existing.pendingReason === 'WAITING_FOR_REQUESTER';
+    const willWait = nextStatus === 'PENDING' && nextPendingReason === 'WAITING_FOR_REQUESTER';
+    if (existing.slaPolicyId && !existing.resolutionCompletedAt && !existing.archivedAt) {
+      if (!wasWaiting && willWait) {
+        updateData.resolutionPausedAt = now;
+        auditEvents.push({ eventType: 'sla.resolution_paused', entityType: 'ticket', entityId: id, actorUserId: user.id, metadata: { reason: 'WAITING_FOR_REQUESTER' } });
+        slaHistory('resolution paused', { reason: 'WAITING_FOR_REQUESTER' });
+      }
+      if (wasWaiting && !willWait && existing.resolutionPausedAt) {
+        const durationSeconds = secondsBetween(now, existing.resolutionPausedAt);
+        const durationMs = Math.max(0, now.getTime() - new Date(existing.resolutionPausedAt).getTime());
+        updateData.resolutionPausedAt = null;
+        updateData.resolutionPausedSeconds = (existing.resolutionPausedSeconds || 0) + durationSeconds;
+        updateData.resolutionPausedMilliseconds = (existing.resolutionPausedMilliseconds ?? (existing.resolutionPausedSeconds || 0) * 1000) + durationMs;
+        updateData.resolutionDueAt = addMilliseconds(updateData.resolutionDueAt || existing.resolutionDueAt, durationMs);
+        updateData.resolutionDueSoonAt = addMilliseconds(updateData.resolutionDueSoonAt || existing.resolutionDueSoonAt, durationMs);
+        auditEvents.push({ eventType: 'sla.resolution_resumed', entityType: 'ticket', entityId: id, actorUserId: user.id, metadata: { pausedSeconds: durationSeconds } });
+        slaHistory('resolution resumed', { pausedSeconds: durationSeconds });
+      }
+    }
+
+    // A newly shortened target may already have elapsed, including at the
+    // frozen pause instant. Record that outcome before any future extension.
+    if (priorityPolicy && ACTIVE_STATUSES.includes(existing.status)) {
+      const candidate = { ...existing, ...updateData };
+      for (const [kind, due, complete, breach, clock] of [
+        ['first response', 'firstResponseDueAt', 'firstRespondedAt', 'firstResponseBreachedAt', now],
+        ['resolution', 'resolutionDueAt', 'resolutionCompletedAt', 'resolutionBreachedAt', candidate.resolutionPausedAt || now],
+      ]) {
+        if (!candidate[complete] && !candidate[breach] && candidate[due] && new Date(clock) > new Date(candidate[due])) {
+          updateData[breach] = candidate[due];
+          slaHistory(`${kind} breached`, { automated: true, detectedDuring: 'priority_change' });
+          auditEvents.push({ eventType: 'sla.milestone_breached', entityType: 'ticket', entityId: id, actorUserId: null, metadata: { milestone: kind, detectedDuring: 'priority_change' } });
+        }
+      }
+    }
+
+    if (data.status === 'RESOLVED' && !existing.resolutionCompletedAt && existing.slaPolicyId) {
+      updateData.resolutionCompletedAt = now;
+      const effectiveDueAt = updateData.resolutionDueAt || existing.resolutionDueAt;
+      if (now > new Date(effectiveDueAt)) updateData.resolutionBreachedAt = existing.resolutionBreachedAt || existing.resolutionDueAt || now;
+      const completedBreached = Boolean(existing.resolutionBreachedAt || updateData.resolutionBreachedAt || now > new Date(effectiveDueAt));
+      auditEvents.push({ eventType: 'sla.resolution_completed', entityType: 'ticket', entityId: id, actorUserId: user.id, metadata: { state: completedBreached ? 'COMPLETED_BREACHED' : 'MET' } });
+      slaHistory('resolution completed', { state: completedBreached ? 'COMPLETED_BREACHED' : 'MET', cycleStartedAt: new Date(existing.resolutionCycleStartedAt || existing.createdAt).toISOString(), dueAt: new Date(effectiveDueAt).toISOString(), completedAt: now.toISOString() });
+    }
+    if (data.status === 'OPEN' && ['RESOLVED', 'CLOSED'].includes(existing.status) && existing.slaPolicyId && !existing.archivedAt) {
+      const target = priorityPolicy?.resolutionMinutes || existing.slaResolutionMinutes;
+      const dueSoon = priorityPolicy?.dueSoonMinutes || existing.slaDueSoonMinutes;
+      if (priorityPolicy) {
+        updateData.slaPolicyId = priorityPolicy.id;
+        updateData.slaPolicyName = priorityPolicy.name;
+        updateData.slaResolutionMinutes = target;
+        updateData.slaDueSoonMinutes = dueSoon;
+      }
+      updateData.resolutionCycleStartedAt = now;
+      updateData.resolutionDueAt = addMinutes(now, target);
+      updateData.resolutionDueSoonAt = addMinutes(now, target - dueSoon);
+      updateData.resolutionCompletedAt = null;
+      updateData.resolutionBreachedAt = null;
+      updateData.resolutionPausedAt = null;
+      updateData.resolutionPausedSeconds = 0;
+      updateData.resolutionPausedMilliseconds = 0;
+      auditEvents.push({ eventType: 'sla.resolution_reopened', entityType: 'ticket', entityId: id, actorUserId: user.id, metadata: { previousCompletionAt: existing.resolutionCompletedAt ? new Date(existing.resolutionCompletedAt).toISOString() : null, previousBreachedAt: existing.resolutionBreachedAt ? new Date(existing.resolutionBreachedAt).toISOString() : null } });
+      slaHistory('resolution reopened', { previousCompletionAt: existing.resolutionCompletedAt ? new Date(existing.resolutionCompletedAt).toISOString() : null, previousBreachedAt: existing.resolutionBreachedAt ? new Date(existing.resolutionBreachedAt).toISOString() : null });
+    }
+
     const result = await tx.ticket.updateMany({
-      where: { id, archivedAt: null, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt },
-      data: { ...data, closedAt: data.status === 'CLOSED' ? new Date() : data.status ? null : undefined },
+      where: { id, archivedAt: null, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt, slaVersion: existing.slaVersion },
+      data: { ...updateData, slaVersion: { increment: 1 } },
     });
     if (result.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
 
     const updated = await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) });
     if (historyEntries.length) await tx.ticketHistory.createMany({ data: historyEntries });
+    if (auditEvents.length) await Promise.all(auditEvents.map((event) => tx.auditEvent.create({ data: event })));
     if (data.status && data.status !== existing.status) {
       await writeNotifications(tx, {
         actorId: user.id,

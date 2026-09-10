@@ -5,7 +5,7 @@ const { PREFERENCE_FIELDS } = require('./notification.schema');
 const MANDATORY_PREFERENCE_FIELDS = ['accountReactivated'];
 const ROLE_VISIBLE_PREFERENCE_FIELDS = {
   USER: ['ticketStatusChanged', 'ticketPublicReply'],
-  AGENT: ['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned'],
+  AGENT: ['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon'],
   ADMIN: PREFERENCE_FIELDS,
 };
 const TYPE_PREFERENCE_FIELD = {
@@ -17,6 +17,8 @@ const TYPE_PREFERENCE_FIELD = {
   KNOWLEDGE_SUBMITTED: 'knowledgeSubmitted',
   KNOWLEDGE_PUBLISHED: 'knowledgePublished',
   KNOWLEDGE_RETURNED: 'knowledgeReturned',
+  SLA_FIRST_RESPONSE_DUE_SOON: 'slaDueSoon',
+  SLA_RESOLUTION_DUE_SOON: 'slaDueSoon',
 };
 const PREFERENCE_SELECT = Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, true]));
 
@@ -31,16 +33,19 @@ async function writeNotifications(tx, { actorId = null, entries }) {
   const unique = new Map();
   for (const entry of entries || []) {
     if (!entry || !entry.recipientId || entry.recipientId === actorId) continue;
-    unique.set(entry.recipientId, entry);
+    // A recipient can receive distinct SLA milestones in one sweep. Dedupe is
+    // the stable event key, not recipient identity alone.
+    unique.set(`${entry.recipientId}:${entry.dedupeKey || `${entry.type}:${entry.ticketId || ''}`}`, entry);
   }
   const candidates = [...unique.values()];
   if (!candidates.length) return { count: 0 };
 
   const activeUsers = await tx.user.findMany({
     where: { id: { in: candidates.map((entry) => entry.recipientId) }, isActive: true },
-    select: { id: true },
+    select: { id: true, role: true },
   });
-  const activeIds = new Set(activeUsers.map((user) => user.id));
+  const activeUsersById = new Map(activeUsers.map((user) => [user.id, user]));
+  const activeIds = new Set(activeUsersById.keys());
   if (!activeIds.size) return { count: 0 };
 
   // One batch read avoids an N+1 preference lookup and preserves the existing
@@ -51,7 +56,9 @@ async function writeNotifications(tx, { actorId = null, entries }) {
   });
   const preferencesByUserId = new Map(preferences.map((preference) => [preference.userId, preference]));
   const data = candidates.filter((entry) => {
-    if (!activeIds.has(entry.recipientId)) return false;
+    const recipient = activeUsersById.get(entry.recipientId);
+    if (!recipient) return false;
+    if (entry.type.startsWith('SLA_') && !['AGENT', 'ADMIN'].includes(recipient.role)) return false;
     const preferenceField = TYPE_PREFERENCE_FIELD[entry.type];
     return !preferenceField || preferencesByUserId.get(entry.recipientId)?.[preferenceField] !== false;
   }).map((entry) => ({
@@ -84,18 +91,19 @@ function visiblePreferenceFields(role) {
   return ROLE_VISIBLE_PREFERENCE_FIELDS[role] || [];
 }
 
-function defaultPreferences() {
-  return Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, true]));
+function defaultPreferences(user) {
+  return Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, field === 'slaDueSoon' ? ['AGENT', 'ADMIN'].includes(user?.role) : true]));
 }
 
 function preferenceResponse(user, preference) {
-  const values = { ...defaultPreferences(), ...(preference || {}) };
+  const values = { ...defaultPreferences(user), ...(preference || {}) };
   return {
     preferences: {
       ...Object.fromEntries(visiblePreferenceFields(user.role).map((field) => [field, values[field]])),
       accountReactivated: true,
+      ...(['AGENT', 'ADMIN'].includes(user.role) ? { slaBreached: true } : {}),
     },
-    mandatory: MANDATORY_PREFERENCE_FIELDS,
+    mandatory: [...MANDATORY_PREFERENCE_FIELDS, ...(['AGENT', 'ADMIN'].includes(user.role) ? ['slaBreached'] : [])],
   };
 }
 
@@ -117,7 +125,7 @@ async function updateNotificationPreferences(user, changes, requestId) {
       where: { userId: user.id },
       select: PREFERENCE_SELECT,
     });
-    const effectiveCurrent = { ...defaultPreferences(), ...(current || {}) };
+    const effectiveCurrent = { ...defaultPreferences(user), ...(current || {}) };
     const changedKeys = Object.keys(changes).filter((field) => effectiveCurrent[field] !== changes[field]);
     if (!changedKeys.length) return preferenceResponse(user, current);
 

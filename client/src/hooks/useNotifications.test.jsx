@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { notificationsApi } from '../api/notifications.api';
 import { clearProtectedCache, protectedMutationKeys, protectedQueryKeys } from '../query/protectedCache';
-import { notificationDestination, useMarkNotificationRead, useNotificationPreferences, useUnreadNotificationCount, useUpdateNotificationPreferences } from './useNotifications';
+import { NOTIFICATION_TYPES, NOTIFICATION_PREFERENCE_KEYS, notificationDestination, useMarkNotificationRead, useNotificationPreferences, useUnreadNotificationCount, useUpdateNotificationPreferences } from './useNotifications';
 
 const auth = vi.hoisted(() => ({ user: null }));
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: auth.user }) }));
@@ -104,6 +104,15 @@ describe('notification query safety', () => {
     expect(notificationDestination({ type: 'ACCOUNT_REACTIVATED' })).toBe('/profile');
     expect(notificationDestination({ type: 'UNKNOWN', url: 'https://unsafe.example' })).toBeNull();
     expect(notificationDestination({ type: 'TICKET_PUBLIC_REPLY', ticketId: '' })).toBeNull();
+  });
+
+  it('treats SLA escalation notifications as ticket-scoped and keeps due-soon preference optional', () => {
+    expect(NOTIFICATION_TYPES).toEqual(expect.arrayContaining([
+      'SLA_FIRST_RESPONSE_DUE_SOON', 'SLA_FIRST_RESPONSE_BREACHED',
+      'SLA_RESOLUTION_DUE_SOON', 'SLA_RESOLUTION_BREACHED',
+    ]));
+    expect(NOTIFICATION_PREFERENCE_KEYS).toContain('slaDueSoon');
+    expect(notificationDestination({ type: 'SLA_RESOLUTION_BREACHED', ticketId: 'ticket-1' })).toBe('/tickets/ticket-1');
   });
 
   it('does not restore an optimistic notification after logout cleanup and a late mutation failure', async () => {

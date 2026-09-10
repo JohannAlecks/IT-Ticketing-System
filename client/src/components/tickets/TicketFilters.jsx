@@ -1,18 +1,29 @@
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import Select from '../ui/Select';
+import Input from '../ui/Input';
 import { useAgents } from '../../hooks/useAgents';
 import { useAuth } from '../../context/AuthContext';
 import { ticketCategories } from '../../constants/ticketCategories';
+import { SLA_FILTER_STATES } from '../../hooks/useSla';
 
 const STATUS_OPTIONS = ['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
 const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
 export default function TicketFilters({ filters, onChange }) {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const { data: agents } = useAgents();
   const showAgentFilter = role === 'ADMIN' || role === 'AGENT';
+  const showSlaFilter = (role === 'ADMIN' || role === 'AGENT') && filters.archive !== 'archived';
+  const showDepartmentFilter = role === 'ADMIN';
+  const agentSlaScoped = role === 'AGENT' && Boolean(filters.slaState);
 
   const update = (patch) => onChange({ ...filters, ...patch, page: 1 });
+  const updateSlaState = (value) => {
+    const patch = { slaState: value || undefined };
+    if (value && role === 'AGENT' && user?.id) patch.assignedToId = user.id;
+    if (!value && role === 'AGENT' && user?.id && filters.assignedToId === user.id) patch.assignedToId = undefined;
+    update(patch);
+  };
   const activeCount = Object.keys(filters).filter((key) => !['page', 'limit', 'archive'].includes(key) && filters[key]).length;
   const clearFilters = () => onChange({
     page: 1,
@@ -81,7 +92,8 @@ export default function TicketFilters({ filters, onChange }) {
         <div className="w-48">
           <Select
             label="Assigned agent"
-            value={filters.assignedToId || ''}
+            value={agentSlaScoped ? user?.id || '' : (filters.assignedToId || '')}
+            disabled={agentSlaScoped}
             onChange={(e) => update({ assignedToId: e.target.value || undefined })}
           >
             <option value="">All agents</option>
@@ -89,6 +101,36 @@ export default function TicketFilters({ filters, onChange }) {
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </Select>
+          {agentSlaScoped && <p className="mt-1 text-xs text-slate-500">SLA filters are limited to tickets assigned to you.</p>}
+        </div>
+      )}
+
+      {showSlaFilter && (
+        <div className="w-44">
+          <Select
+            id="ticket-sla-state"
+            label="SLA state"
+            value={filters.slaState || ''}
+            onChange={(e) => updateSlaState(e.target.value)}
+          >
+            <option value="">All SLA states</option>
+            {SLA_FILTER_STATES.map((state) => (
+              <option key={state} value={state}>{state.replace('_', ' ')}</option>
+            ))}
+          </Select>
+          {role === 'AGENT' && filters.slaState && <p className="mt-1 text-xs text-slate-500">Limited to tickets assigned to you.</p>}
+        </div>
+      )}
+
+      {showDepartmentFilter && (
+        <div className="w-48">
+          <Input
+            id="ticket-department"
+            label="Department"
+            placeholder="Requester department"
+            value={filters.department || ''}
+            onChange={(e) => update({ department: e.target.value || undefined })}
+          />
         </div>
       )}
     </div>

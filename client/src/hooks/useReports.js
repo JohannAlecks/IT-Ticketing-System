@@ -114,6 +114,8 @@ export function useReportSummary(filters) {
     queryKey: [...protectedQueryKeys.reports(userId), roleKey, 'summary', normalizedFilters],
     queryFn: ({ signal }) => reportsApi.getSummary(normalizedFilters, signal),
     enabled: !!userId && canAccessReports(role),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 }
 

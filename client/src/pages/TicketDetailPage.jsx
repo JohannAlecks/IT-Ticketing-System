@@ -13,6 +13,7 @@ import CommentList from '../components/tickets/CommentList';
 import CommentForm from '../components/tickets/CommentForm';
 import HistoryTimeline from '../components/tickets/HistoryTimeline';
 import TicketAttachments from '../components/tickets/TicketAttachments';
+import SlaDetails from '../components/sla/SlaDetails';
 import { canArchiveTicket } from '../components/tickets/ticketArchivePolicy';
 import { formatDateTime, shortId } from '../utils/format';
 import { categoryLabel } from '../constants/ticketCategories';
@@ -255,6 +256,7 @@ export default function TicketDetailPage() {
 
         {/* Side column */}
         <div className="space-y-6">
+          <SlaDetails ticket={ticket} role={role} />
           {!isArchived && <TicketControls ticket={ticket} />}
         </div>
       </div>

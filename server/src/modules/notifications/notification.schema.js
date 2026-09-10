@@ -1,6 +1,6 @@
 const { z } = require('zod');
 
-const TYPES = ['TICKET_ASSIGNED', 'TICKET_UNASSIGNED', 'TICKET_STATUS_CHANGED', 'TICKET_PUBLIC_REPLY', 'TICKET_WORK_BLOCKING', 'KNOWLEDGE_SUBMITTED', 'KNOWLEDGE_PUBLISHED', 'KNOWLEDGE_RETURNED', 'ACCOUNT_REACTIVATED'];
+const TYPES = ['TICKET_ASSIGNED', 'TICKET_UNASSIGNED', 'TICKET_STATUS_CHANGED', 'TICKET_PUBLIC_REPLY', 'TICKET_WORK_BLOCKING', 'KNOWLEDGE_SUBMITTED', 'KNOWLEDGE_PUBLISHED', 'KNOWLEDGE_RETURNED', 'ACCOUNT_REACTIVATED', 'SLA_FIRST_RESPONSE_DUE_SOON', 'SLA_FIRST_RESPONSE_BREACHED', 'SLA_RESOLUTION_DUE_SOON', 'SLA_RESOLUTION_BREACHED'];
 const listQuerySchema = z.object({
   status: z.enum(['ALL', 'UNREAD']).optional().default('ALL'),
   type: z.enum(TYPES).optional(),
@@ -12,6 +12,7 @@ const emptyBodySchema = z.object({}).strict();
 const PREFERENCE_FIELDS = [
   'ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply',
   'ticketWorkBlocking', 'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned',
+  'slaDueSoon',
 ];
 
 const preferencePatchSchema = z.object(Object.fromEntries(PREFERENCE_FIELDS.map((field) => [field, z.boolean().optional()])))

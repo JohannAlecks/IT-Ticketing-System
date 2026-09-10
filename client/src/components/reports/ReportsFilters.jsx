@@ -172,7 +172,7 @@ export default function ReportsFilters({
           <Button type="submit">Apply Filters</Button>
           <Button type="button" variant="secondary" onClick={onReset}>Reset Filters</Button>
           <span className="ml-1 inline-flex items-center gap-1.5 text-xs text-slate-500">
-            <Search aria-hidden="true" className="h-3.5 w-3.5" /> Filters apply to the summary and detailed report.
+            <Search aria-hidden="true" className="h-3.5 w-3.5" /> Filters apply to the summary, SLA metrics, and detailed report.
           </span>
         </div>
       </form>

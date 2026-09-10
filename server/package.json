@@ -13,7 +13,8 @@
     "prisma:studio": "prisma studio",
     "prisma:generate": "prisma generate",
     "prisma:check-client": "node scripts/check-prisma-client.js",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "sla:sweep": "node scripts/sla-sweep.js"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",

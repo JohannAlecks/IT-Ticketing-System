@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpDown } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import StatusBadge from './StatusBadge';
 import PriorityBadge from './PriorityBadge';
+import SlaBadge, { getSlaBadgeState } from '../sla/SlaBadge';
 import { formatDate, formatDateTime, shortId } from '../../utils/format';
 import { categoryLabel } from '../../constants/ticketCategories';
 
@@ -11,6 +13,7 @@ const ACTIVE_COLUMNS = [
   { key: 'title', label: 'Title' },
   { key: 'status', label: 'Status' },
   { key: 'priority', label: 'Priority' },
+  { key: 'sla', label: 'SLA' },
   { key: 'category', label: 'Category' },
   { key: 'createdBy', label: 'Requester' },
   { key: 'assignedTo', label: 'Assigned Agent' },
@@ -23,6 +26,7 @@ const ARCHIVED_COLUMNS = [
   { key: 'title', label: 'Title' },
   { key: 'status', label: 'Status' },
   { key: 'priority', label: 'Priority' },
+  { key: 'sla', label: 'SLA' },
   { key: 'category', label: 'Category' },
   { key: 'createdBy', label: 'Requester' },
   { key: 'assignedTo', label: 'Assigned Agent' },
@@ -35,13 +39,16 @@ const ARCHIVED_COLUMNS = [
 // orders by createdAt desc), so this sorts what's already been fetched.
 export default function TicketTable({ tickets = [], archive = 'active', showArchivedBy }) {
   const navigate = useNavigate();
+  const { role } = useAuth();
   const isArchived = archive === 'archived';
+  const canSeeSla = role === 'AGENT' || role === 'ADMIN';
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const hasArchivedBy = showArchivedBy ?? tickets.some((ticket) => ticket.archivedBy?.name);
-  const columns = isArchived
+  const baseColumns = isArchived
     ? ARCHIVED_COLUMNS.filter((column) => column.key !== 'archivedBy' || hasArchivedBy)
     : ACTIVE_COLUMNS;
+  const columns = baseColumns.filter((column) => column.key !== 'sla' || canSeeSla);
 
   const sorted = useMemo(() => {
     if (!sortKey) return tickets;
@@ -51,6 +58,7 @@ export default function TicketTable({ tickets = [], archive = 'active', showArch
         if (sortKey === 'createdBy') return t.createdBy?.name || '';
         if (sortKey === 'assignedTo') return t.assignedTo?.name || '';
         if (sortKey === 'archivedBy') return t.archivedBy?.name || '';
+        if (sortKey === 'sla') return getSlaBadgeState(t.sla) || '';
         return t[sortKey] ?? '';
       };
       const va = getVal(a);
@@ -116,6 +124,7 @@ export default function TicketTable({ tickets = [], archive = 'active', showArch
               <td className="max-w-xs truncate px-4 py-4 font-semibold text-slate-900">{ticket.title}</td>
               <td className="whitespace-nowrap px-4 py-4"><StatusBadge status={ticket.status} /></td>
               <td className="whitespace-nowrap px-4 py-4"><PriorityBadge priority={ticket.priority} /></td>
+              {canSeeSla && <td className="whitespace-nowrap px-4 py-4"><SlaBadge sla={ticket.sla} role={role} showCountdown={!isArchived} /></td>}
               <td className="whitespace-nowrap px-4 py-4 text-slate-600">{categoryLabel(ticket.category)}</td>
               <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.createdBy?.name || '—'}</td>
               <td className="whitespace-nowrap px-4 py-4 text-slate-600">{ticket.assignedTo?.name || <span className="text-slate-400">Unassigned</span>}</td>

@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { clearProtectedCache, invalidateTicketTransitionQueries, protectedMutationKeys, protectedQueryKeys } from './protectedCache';
+import { clearProtectedCache, invalidateSlaMetricQueries, invalidateTicketTransitionQueries, protectedMutationKeys, protectedQueryKeys } from './protectedCache';
 
 function makeClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -150,5 +150,27 @@ describe('protected cache ownership', () => {
     expect(protectedMutationKeys.notificationPreferences('account-a', 'ADMIN')).toEqual([
       'protected', 'account-a', 'notification-preferences-mutation', 'ADMIN',
     ]);
+  });
+
+  it('isolates SLA policy queries and mutations by account and role', () => {
+    expect(protectedQueryKeys.slaPolicies('account-a', 'AGENT')).not.toEqual(protectedQueryKeys.slaPolicies('account-a', 'ADMIN'));
+    expect(protectedQueryKeys.slaPolicies('account-a', 'ADMIN')).not.toEqual(protectedQueryKeys.slaPolicies('account-b', 'ADMIN'));
+    expect(protectedMutationKeys.slaPolicy('account-a', 'ADMIN', 'policy-1')).not.toEqual(protectedMutationKeys.slaPolicy('account-b', 'ADMIN', 'policy-1'));
+  });
+
+  it('invalidates SLA metrics only beneath the current account root', async () => {
+    const client = makeClient();
+    const current = [
+      [...protectedQueryKeys.dashboard('account-a'), 'summary'],
+      [...protectedQueryKeys.workload('account-a'), { page: 1 }],
+      [...protectedQueryKeys.reports('account-a'), 'ADMIN', 'summary', { interval: 'day' }],
+    ];
+    const other = [...protectedQueryKeys.dashboard('account-b'), 'summary'];
+    [...current, other].forEach((key) => client.setQueryData(key, { value: 'cached' }));
+
+    await invalidateSlaMetricQueries(client, 'account-a');
+
+    current.forEach((key) => expect(client.getQueryState(key)?.isInvalidated).toBe(true));
+    expect(client.getQueryState(other)?.isInvalidated).not.toBe(true);
   });
 });

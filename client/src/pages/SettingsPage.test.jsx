@@ -29,7 +29,7 @@ vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() 
 vi.mock('../hooks/useNotifications', () => ({
   NOTIFICATION_PREFERENCE_KEYS: [
     'ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'ticketWorkBlocking',
-    'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned',
+    'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon',
   ],
   useNotificationPreferences: () => preferenceQuery,
   useUpdateNotificationPreferences: () => preferenceMutation,
@@ -174,5 +174,37 @@ describe('Notifications settings', () => {
     rerender(<SettingsPage />);
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Knowledge published' })).toBeInTheDocument());
     expect(screen.queryByRole('checkbox', { name: 'Ticket status changed' })).not.toBeInTheDocument();
+  });
+
+  it('shows optional due-soon and mandatory breach controls for support roles', async () => {
+    authState.user = { id: 'agent-1', role: 'AGENT', name: 'Support Agent' };
+    authState.role = 'AGENT';
+    resetQuery({
+      preferences: {
+        ticketStatusChanged: true,
+        ticketPublicReply: true,
+        slaDueSoon: false,
+        slaBreached: true,
+        accountReactivated: true,
+      },
+      mandatory: ['accountReactivated', 'slaBreached'],
+    });
+    preferenceMutation.mutateAsync.mockResolvedValue({
+      preferences: { ticketStatusChanged: true, ticketPublicReply: true, slaDueSoon: true, slaBreached: true, accountReactivated: true },
+      mandatory: ['accountReactivated', 'slaBreached'],
+    });
+    renderSettings();
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'SLA escalation' })).toBeInTheDocument());
+    const dueSoon = screen.getByRole('checkbox', { name: 'SLA due soon' });
+    const breached = screen.getByRole('checkbox', { name: 'SLA breached' });
+    expect(dueSoon).not.toBeChecked();
+    expect(breached).toBeChecked();
+    expect(breached).toBeDisabled();
+    expect(screen.getAllByText('Always enabled')).toHaveLength(2);
+
+    fireEvent.click(dueSoon);
+    fireEvent.click(screen.getByRole('button', { name: /Save notification preferences/i }));
+    await waitFor(() => expect(preferenceMutation.mutateAsync).toHaveBeenCalledWith({ slaDueSoon: true }));
   });
 });

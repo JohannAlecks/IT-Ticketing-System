@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const env = require('../../config/env');
+const { slaFilterWhere, snapshotSelect, staffPayload, requesterPayload, SLA_HISTORY_DESCRIPTIONS } = require('../sla/sla.engine');
 
 const WINDOW_DAYS = 7;
 const ACTIVE_STATUSES = ['OPEN', 'IN_PROGRESS', 'PENDING'];
@@ -20,6 +21,8 @@ const ticketListSelect = {
   updatedAt: true,
   closedAt: true,
   assignedTo: { select: { id: true, name: true } },
+  assignedToId: true,
+  ...snapshotSelect,
 };
 
 function statusCounts(rows) {
@@ -43,12 +46,19 @@ function onboardingDefaults(onboarding) {
 }
 
 function summaryEnvelope(user, generatedAt, onboarding, body) {
+  const lists = Object.fromEntries(Object.entries(body.lists || {}).map(([name, rows]) => [name, rows.map((row) => {
+    if (!row.status) return row; // e.g. admin workload entries
+    const safe = Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'assignedToId' && !Object.hasOwn(snapshotSelect, key)));
+    const canSeeStaff = user.role === 'ADMIN' || (user.role === 'AGENT' && row.assignedToId === user.id);
+    return { ...safe, sla: user.role === 'USER' ? requesterPayload(row, generatedAt) : (canSeeStaff ? staffPayload(row, generatedAt) : null) };
+  })]));
   return {
     role: user.role,
     generatedAt: generatedAt.toISOString(),
     windowDays: WINDOW_DAYS,
     definitions: { activeStatuses: ACTIVE_STATUSES, terminalStatuses: TERMINAL_STATUSES },
     ...body,
+    lists,
     onboarding: onboardingDefaults(onboarding),
   };
 }
@@ -85,7 +95,7 @@ async function getUserSummary(user, cutoff, generatedAt) {
 async function getAgentSummary(user, cutoff, generatedAt) {
   const assigned = { assignedToId: user.id, archivedAt: null };
   const unassigned = { assignedToId: null, archivedAt: null };
-  const [assignedActive, assignedWorkBlocking, eligibleUnassigned, recentlyUpdatedAssigned, recentlyClosedByMe, byStatus, priorityQueue, unassignedTickets, recentlyUpdated, onboarding] = await Promise.all([
+  const [assignedActive, assignedWorkBlocking, eligibleUnassigned, recentlyUpdatedAssigned, recentlyClosedByMe, byStatus, priorityQueue, unassignedTickets, recentlyUpdated, onboarding, slaDueSoon, slaBreached] = await Promise.all([
     prisma.ticket.count({ where: activeWhere(assigned) }),
     prisma.ticket.count({ where: activeWhere({ ...assigned, isWorkBlocking: true }) }),
     prisma.ticket.count({ where: activeWhere(unassigned) }),
@@ -96,17 +106,20 @@ async function getAgentSummary(user, cutoff, generatedAt) {
     prisma.ticket.findMany({ where: activeWhere(unassigned), select: ticketListSelect, orderBy: [{ isWorkBlocking: 'desc' }, { priority: 'desc' }, { updatedAt: 'desc' }], take: 6 }),
     prisma.ticket.findMany({ where: { ...assigned, updatedAt: { gte: cutoff } }, select: ticketListSelect, orderBy: { updatedAt: 'desc' }, take: 6 }),
     prisma.userOnboarding.findUnique({ where: { userId: user.id }, select: { completedSteps: true, dismissedAt: true, completedAt: true } }),
+    prisma.ticket.count({ where: { AND: [assigned, slaFilterWhere('DUE_SOON', generatedAt)] } }),
+    prisma.ticket.count({ where: { AND: [assigned, slaFilterWhere('BREACHED', generatedAt)] } }),
   ]);
 
   return summaryEnvelope(user, generatedAt, onboarding, {
     metrics: { assignedActive, assignedWorkBlocking, eligibleUnassigned, recentlyUpdatedAssigned, recentlyClosedByMe },
+    sla: { dueSoon: slaDueSoon, breached: slaBreached },
     distributions: { byStatus: statusCounts(byStatus) },
     lists: { priorityQueue, unassigned: unassignedTickets, recentlyUpdated },
   });
 }
 
 async function getAdminSummary(user, cutoff, generatedAt) {
-  const [totalTickets, activeTickets, unassignedActive, workBlockingActive, recentlyCreated, recentlyClosed, activeAgents, inactiveUsers, byStatus, byCategory, requesterVolumes, activeTicketCounts, priorityQueue, recentAudit, onboarding] = await Promise.all([
+  const [totalTickets, activeTickets, unassignedActive, workBlockingActive, recentlyCreated, recentlyClosed, activeAgents, inactiveUsers, byStatus, byCategory, requesterVolumes, activeTicketCounts, priorityQueue, recentAudit, onboarding, slaDueSoon, slaBreached] = await Promise.all([
     prisma.ticket.count({ where: { archivedAt: null } }),
     prisma.ticket.count({ where: activeWhere() }),
     prisma.ticket.count({ where: activeWhere({ assignedToId: null }) }),
@@ -122,6 +135,8 @@ async function getAdminSummary(user, cutoff, generatedAt) {
     prisma.ticket.findMany({ where: activeWhere(), select: ticketListSelect, orderBy: [{ isWorkBlocking: 'desc' }, { priority: 'desc' }, { updatedAt: 'desc' }], take: 8 }),
     prisma.auditEvent.findMany({ select: { id: true, eventType: true, entityType: true, entityId: true, createdAt: true, actor: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 8 }),
     prisma.userOnboarding.findUnique({ where: { userId: user.id }, select: { completedSteps: true, dismissedAt: true, completedAt: true } }),
+    prisma.ticket.count({ where: slaFilterWhere('DUE_SOON', generatedAt) }),
+    prisma.ticket.count({ where: slaFilterWhere('BREACHED', generatedAt) }),
   ]);
 
   const requesterIds = requesterVolumes.map((row) => row.createdById);
@@ -156,6 +171,7 @@ async function getAdminSummary(user, cutoff, generatedAt) {
 
   return summaryEnvelope(user, generatedAt, onboarding, {
     metrics: { totalTickets, activeTickets, unassignedActive, workBlockingActive, recentlyCreated, recentlyClosed, activeAgents, inactiveUsers },
+    sla: { dueSoon: slaDueSoon, breached: slaBreached },
     distributions: { byStatus: statusCounts(byStatus), byCategory: categoryCounts(byCategory), byDepartment },
     lists: {
       workload: agents.map((agent) => ({
@@ -196,7 +212,10 @@ async function getStats(user) {
   const recentActivityWhere = {
     ticket: where,
     ...(user.role === 'USER'
-      ? { NOT: { description: { contains: 'internal note' } } }
+      ? { AND: [
+        { NOT: { description: { contains: 'internal note' } } },
+        { NOT: { description: { in: SLA_HISTORY_DESCRIPTIONS } } },
+      ] }
       : {}),
   };
 
@@ -237,6 +256,12 @@ async function getStats(user) {
       ? prisma.ticketHistory.findMany({
           where: {
             userId: user.id,
+            // Internal SLA history remains assignment-scoped even in an
+            // actor's personal feed after a ticket returns to the queue.
+            ...(user.role === 'AGENT' ? { OR: [
+              { ticket: { assignedToId: user.id } },
+              { NOT: { description: { in: SLA_HISTORY_DESCRIPTIONS } } },
+            ] } : {}),
             ticket: user.role === 'AGENT'
               ? { AND: [{ archivedAt: null }, { OR: [{ assignedToId: user.id }, { assignedToId: null }] }] }
               : { archivedAt: null },

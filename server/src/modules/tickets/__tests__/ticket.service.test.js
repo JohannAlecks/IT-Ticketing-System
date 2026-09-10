@@ -31,6 +31,7 @@ jest.mock('../../../config/prisma', () => ({
     createMany: jest.fn(),
   },
   auditEvent: { create: jest.fn() },
+  slaPolicy: { findFirst: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
 }));
 
@@ -58,6 +59,7 @@ function baseTicket(overrides = {}) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.slaPolicy.findFirst.mockResolvedValue(null);
   mockPrisma.ticket.deleteMany.mockResolvedValue({ count: 1 });
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);

@@ -26,6 +26,10 @@ const typeLabels = {
   KNOWLEDGE_PUBLISHED: 'Knowledge published',
   KNOWLEDGE_RETURNED: 'Knowledge returned',
   ACCOUNT_REACTIVATED: 'Account reactivated',
+  SLA_FIRST_RESPONSE_DUE_SOON: 'First response SLA due soon',
+  SLA_FIRST_RESPONSE_BREACHED: 'First response SLA breached',
+  SLA_RESOLUTION_DUE_SOON: 'Resolution SLA due soon',
+  SLA_RESOLUTION_BREACHED: 'Resolution SLA breached',
 };
 
 export default function NotificationsPage() {

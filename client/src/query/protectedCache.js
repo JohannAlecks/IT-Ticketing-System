@@ -31,6 +31,7 @@ export const protectedQueryKeys = {
   dashboard: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'dashboard'],
   workload: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'dashboard', 'agent-workload'],
   reports: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'reports'],
+  slaPolicies: (userId, role) => scopedKey(userId, role, ['sla-policies']),
   users: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'users'],
   agents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'agents'],
   auditEvents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'audit-events'],
@@ -51,6 +52,7 @@ export const protectedMutationKeys = {
   onboarding: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'onboarding-mutation'],
   notification: (userId, action, notificationId) => [PROTECTED_QUERY_SCOPE, userId, 'notification-mutation', action, notificationId],
   notificationPreferences: (userId, role) => [PROTECTED_QUERY_SCOPE, userId, 'notification-preferences-mutation', String(role || '').toUpperCase()],
+  slaPolicy: (userId, role, policyId) => scopedKey(userId, role, ['sla-policy-mutation', policyId]),
   knowledge: (userId, role, action, articleId) => [PROTECTED_QUERY_SCOPE, userId, 'knowledge-mutation', String(role || '').toUpperCase(), action, articleId],
 };
 
@@ -81,6 +83,17 @@ export async function refreshTicketState(queryClient, userId, ticketId, role) {
   ];
 
   await Promise.all(filters.map((filter) => queryClient.invalidateQueries(filter)));
+}
+
+// SLA lifecycle mutations also change the server-provided dashboard and
+// report aggregates. Keep these invalidations account-scoped and separate from
+// the existing ticket conflict refresh so callers can preserve its contract.
+export async function invalidateSlaMetricQueries(queryClient, userId) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: protectedQueryKeys.dashboard(userId) }),
+    queryClient.invalidateQueries({ queryKey: protectedQueryKeys.workload(userId) }),
+    queryClient.invalidateQueries({ queryKey: protectedQueryKeys.reports(userId) }),
+  ]);
 }
 
 // Archive/restore changes which side of the active/archived boundary owns a

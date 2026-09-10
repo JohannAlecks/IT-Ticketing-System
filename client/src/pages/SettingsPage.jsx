@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { NOTIFICATION_PREFERENCE_KEYS, useNotificationPreferences, useUpdateNotificationPreferences } from '../hooks/useNotifications';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
+import SlaPolicySettings from '../components/sla/SlaPolicySettings';
 
 function Section({ icon: Icon, title, description, className = '', children }) {
   return <section className={`card p-5 ${className}`}><div className="mb-5 flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="h-4 w-4" /></div><div><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-0.5 text-sm text-slate-500">{description}</p></div></div>{children}</section>;
@@ -26,6 +27,13 @@ const NOTIFICATION_GROUPS = [
       { key: 'ticketStatusChanged', label: 'Ticket status changed', description: 'A ticket you are involved with changes status.' },
       { key: 'ticketPublicReply', label: 'Ticket public reply', description: 'A public reply is added to a ticket you are involved with.' },
       { key: 'ticketWorkBlocking', label: 'Ticket work blocking', description: 'A ticket is marked as work-blocking.' },
+    ],
+  },
+  {
+    title: 'SLA escalation',
+    options: [
+      { key: 'slaDueSoon', label: 'SLA due soon', description: 'Optional alerts when assigned support work is approaching its SLA target.', roles: ['AGENT', 'ADMIN'] },
+      { key: 'slaBreached', label: 'SLA breached', description: 'Breach alerts are required for support staff and cannot be turned off.', roles: ['AGENT', 'ADMIN'], mandatory: true },
     ],
   },
   {
@@ -131,7 +139,7 @@ function NotificationPreferencesSection() {
   const serverPreferences = preferenceValues(preferencesQuery.data);
   const mandatory = new Set(Array.isArray(preferencesQuery.data?.mandatory) ? preferencesQuery.data.mandatory : []);
   const visibleGroups = NOTIFICATION_GROUPS
-    .map((group) => ({ ...group, options: group.options.filter((option) => hasOwn(serverPreferences, option.key)) }))
+    .map((group) => ({ ...group, options: group.options.filter((option) => hasOwn(serverPreferences, option.key) && (!option.roles || option.roles.includes(normalizedRole))) }))
     .filter((group) => group.options.length > 0);
   const changes = ready ? changedNotificationPreferences(baseline, draft) : {};
   const isDirty = Object.keys(changes).length > 0;
@@ -198,7 +206,7 @@ function NotificationPreferencesSection() {
 }
 
 export default function SettingsPage() {
-  const { user, updateUser } = useAuth();
+  const { user, role, updateUser } = useAuth();
   const { theme, setTheme } = useTheme();
   const [name, setName] = useState(user?.name || '');
   const [department, setDepartment] = useState(user?.department || '');
@@ -211,5 +219,6 @@ export default function SettingsPage() {
   const passwordValid = rules.every(([, valid]) => valid) && passwords.currentPassword && passwords.newPassword === passwords.confirmPassword;
   const departments = ['Human Resources','Information Technology','Finance','Accounting','Operations','Administration','Marketing','Sales','Customer Support','Procurement','Engineering','Legal','Executive'];
   const isCustom = department && !departments.includes(department);
-  return <div className="mx-auto max-w-4xl space-y-5"><div><p className="eyebrow text-brand-700">Account</p><h1 className="page-title">Settings</h1><p className="page-subtitle">Manage your profile, security, and workspace preferences.</p></div><div className="grid gap-5 lg:grid-cols-2"><Section icon={UserRound} title="Profile" description="Update the name and department shown across tickets."><form className="space-y-4" onSubmit={saveProfile}><Input label="Full name" value={name} onChange={(event) => setName(event.target.value)} required /><div><label className="mb-1.5 block text-sm font-medium text-slate-700">Department</label><select className="input" value={isCustom ? 'Other' : department} onChange={(event) => setDepartment(event.target.value === 'Other' ? (isCustom ? department : '') : event.target.value)}><option value="">Not specified</option>{departments.map((option) => <option key={option} value={option}>{option}</option>)}<option value="Other">Other</option></select></div>{(isCustom || department === '') && <Input label="Custom department" value={isCustom ? department : ''} maxLength={100} onChange={(event) => setDepartment(event.target.value)} helperText="Optional; up to 100 characters." />}<Button type="submit" isLoading={savingProfile}><Save className="h-4 w-4" /> Save profile</Button></form></Section><NotificationPreferencesSection /></div></div>;
+  const normalizedRole = String(role || user?.role || '').toUpperCase();
+  return <div className="mx-auto max-w-4xl space-y-5"><div><p className="eyebrow text-brand-700">Account</p><h1 className="page-title">Settings</h1><p className="page-subtitle">Manage your profile, security, and workspace preferences.</p></div><div className="grid gap-5 lg:grid-cols-2"><Section icon={UserRound} title="Profile" description="Update the name and department shown across tickets."><form className="space-y-4" onSubmit={saveProfile}><Input label="Full name" value={name} onChange={(event) => setName(event.target.value)} required /><div><label className="mb-1.5 block text-sm font-medium text-slate-700">Department</label><select className="input" value={isCustom ? 'Other' : department} onChange={(event) => setDepartment(event.target.value === 'Other' ? (isCustom ? department : '') : event.target.value)}><option value="">Not specified</option>{departments.map((option) => <option key={option} value={option}>{option}</option>)}<option value="Other">Other</option></select></div>{(isCustom || department === '') && <Input label="Custom department" value={isCustom ? department : ''} maxLength={100} onChange={(event) => setDepartment(event.target.value)} helperText="Optional; up to 100 characters." />}<Button type="submit" isLoading={savingProfile}><Save className="h-4 w-4" /> Save profile</Button></form></Section><NotificationPreferencesSection />{normalizedRole === 'ADMIN' && <SlaPolicySettings />}</div></div>;
 }

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useArchiveTicket, useTickets, useUpdateTicket } from './useTickets';
+import { normalizeTicketFilters, useArchiveTicket, useTickets, useUpdateTicket } from './useTickets';
 import { protectedQueryKeys } from '../query/protectedCache';
 
 const authState = vi.hoisted(() => ({ user: { id: 'account-a' }, role: undefined }));
@@ -23,6 +23,16 @@ function wrapperFor(client) {
 }
 
 describe('ticket query ownership', () => {
+  it('normalizes SLA filters to the strict role scope', () => {
+    expect(normalizeTicketFilters({ slaState: 'breached', department: 'Finance' }, 'AGENT', 'agent-1')).toEqual({
+      slaState: 'BREACHED',
+      assignedToId: 'agent-1',
+    });
+    expect(normalizeTicketFilters({ slaState: 'DUE_SOON', department: 'Finance' }, 'USER', 'user-1')).toEqual({});
+    expect(normalizeTicketFilters({ slaState: 'paused', department: 'Finance' }, 'ADMIN', 'admin-1')).toEqual({ slaState: 'PAUSED', department: 'Finance' });
+    expect(normalizeTicketFilters({ archive: 'archived', slaState: 'BREACHED' }, 'ADMIN', 'admin-1')).toEqual({ archive: 'archived' });
+  });
+
   it('forwards an explicit archive mode and separates active and archived query entries', async () => {
     const { ticketsApi } = await import('../api/tickets.api');
     authState.role = 'AGENT';

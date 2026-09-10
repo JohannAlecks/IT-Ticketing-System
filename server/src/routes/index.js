@@ -11,5 +11,6 @@ router.use('/settings', require('../modules/settings/settings.routes'));
 router.use('/onboarding', require('../modules/onboarding/onboarding.routes'));
 router.use('/knowledge', require('../modules/knowledge/knowledge.routes'));
 router.use('/notifications', require('../modules/notifications/notification.routes'));
+router.use('/sla', require('../modules/sla/sla.routes'));
 
 module.exports = router;

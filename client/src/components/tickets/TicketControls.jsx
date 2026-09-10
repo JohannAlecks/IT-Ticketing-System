@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { UserCheck, UserX } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useAgents } from '../../hooks/useAgents';
@@ -44,6 +44,7 @@ export default function TicketControls({ ticket }) {
   const isAgent = role === 'AGENT';
   const isClosed = ticket.status === 'CLOSED';
   const isAssignedToMe = ticket.assignedTo?.id === user?.id;
+  const ticketPendingReason = ticket.pendingReason ?? ticket.sla?.pendingReason ?? null;
 
   const updateTicket = useUpdateTicket(ticket.id);
   const assignTicket = useAssignTicket(ticket.id);
@@ -56,6 +57,11 @@ export default function TicketControls({ ticket }) {
   // ALLOWED_TRANSITIONS map is what actually enforces the transition is
   // legal, independent of whether this dialog was shown or skipped.
   const [pendingCloseStatus, setPendingCloseStatus] = useState(null);
+  const [pendingReason, setPendingReason] = useState(ticketPendingReason || 'OTHER');
+
+  useEffect(() => {
+    setPendingReason(ticketPendingReason || 'OTHER');
+  }, [ticket.id, ticketPendingReason]);
 
   if (ticket.archivedAt) return null;
 
@@ -65,12 +71,18 @@ export default function TicketControls({ ticket }) {
       setPendingCloseStatus(newStatus);
       return;
     }
-    updateTicket.mutate({ status: newStatus });
+    updateTicket.mutate({
+      status: newStatus,
+      // Pending is the only status that carries a reason. Sending null for
+      // every other status keeps the client aligned with the server's
+      // normalization and prevents a stale pause reason from surviving.
+      pendingReason: newStatus === 'PENDING' ? (pendingReason || 'OTHER') : null,
+    });
   };
 
   const confirmClose = () => {
     updateTicket.mutate(
-      { status: pendingCloseStatus },
+      { status: pendingCloseStatus, pendingReason: null },
       { onSettled: () => setPendingCloseStatus(null) }
     );
   };
@@ -92,6 +104,24 @@ export default function TicketControls({ ticket }) {
           <option key={s} value={s}>{STATUS_LABELS[s]}</option>
         ))}
       </Select>
+      {canManage && !isClosed && (ticket.status === 'PENDING' || nextStatuses.includes('PENDING')) && (
+        <Select
+          id="ticket-pending-reason"
+          label="Pending reason"
+          value={pendingReason}
+          onChange={(e) => {
+            const nextReason = e.target.value;
+            setPendingReason(nextReason);
+            if (ticket.status === 'PENDING' && nextReason !== (ticketPendingReason || 'OTHER')) {
+              updateTicket.mutate({ pendingReason: nextReason });
+            }
+          }}
+          disabled={updateTicket.isPending}
+        >
+          <option value="WAITING_FOR_REQUESTER">Waiting for requester</option>
+          <option value="OTHER">Other</option>
+        </Select>
+      )}
       {canManage && isClosed && (
         <p className="-mt-2 text-xs text-gray-400">Reopen this ticket to unlock priority and assignment changes.</p>
       )}

@@ -28,6 +28,7 @@ const updateTicketSchema = z.object({
   status: z.enum(STATUS).optional(),
   priority: z.enum(PRIORITY).optional(),
   category: z.enum(CATEGORY).optional(),
+  pendingReason: z.enum(['WAITING_FOR_REQUESTER', 'OTHER']).nullable().optional(),
 }).strict();
 
 const assignTicketSchema = z.object({
@@ -43,6 +44,8 @@ const listQuerySchema = z.object({
   assignedToId: z.string().uuid().optional(),
   search: z.string().optional(),
   archive: z.enum(['active', 'archived']).optional().default('active'),
+  slaState: z.enum(['ON_TRACK', 'DUE_SOON', 'BREACHED', 'PAUSED']).optional(),
+  department: z.preprocess((value) => typeof value === 'string' ? value.trim() : value, z.string().min(1).max(100).optional()),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
 }).strict();

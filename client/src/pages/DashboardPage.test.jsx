@@ -65,6 +65,7 @@ function summaryFor(role, overrides = {}) {
     },
     onboarding: { completedSteps: [], dismissedAt: null, completedAt: null },
     operations: { emailDeliveryConfigured: true },
+    sla: { dueSoon: 3, breached: 2, timeModel: '24/7 elapsed time' },
     ...overrides,
   };
 }
@@ -131,6 +132,17 @@ describe('DashboardPage role summaries', () => {
 
     expect(screen.getByText('Active assigned ticket totals by support agent.')).toBeInTheDocument();
     expect(screen.getByText('2 active assigned tickets')).toBeInTheDocument();
+  });
+
+  it('shows server-calculated SLA workload counts only on support summaries', () => {
+    const { unmount } = renderDashboard(summaryFor('AGENT'));
+    expect(screen.getByRole('heading', { name: 'SLA workload' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'SLA due soon: 3' })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'SLA breached: 2' })).toBeInTheDocument();
+    unmount();
+
+    renderDashboard(summaryFor('USER'));
+    expect(screen.queryByRole('heading', { name: 'SLA workload' })).not.toBeInTheDocument();
   });
 
   it('shows onboarding guidance only while onboarding is neither completed nor dismissed', () => {

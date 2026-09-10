@@ -4,10 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { protectedQueryKeys } from '../query/protectedCache';
 
 export function useDashboardSummary() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const userId = user?.id;
   return useQuery({
-    queryKey: protectedQueryKeys.dashboard(userId),
+    queryKey: [...protectedQueryKeys.dashboard(userId), String(role || user?.role || '').toUpperCase(), 'summary'],
     queryFn: ({ signal }) => dashboardApi.getSummary(signal),
     enabled: !!userId,
     refetchInterval: 60_000,
@@ -15,10 +15,10 @@ export function useDashboardSummary() {
 }
 
 export function useDashboardStats() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const userId = user?.id;
   return useQuery({
-    queryKey: [...protectedQueryKeys.dashboard(userId), 'stats'],
+    queryKey: [...protectedQueryKeys.dashboard(userId), String(role || user?.role || '').toUpperCase(), 'stats'],
     queryFn: ({ signal }) => dashboardApi.getStats(signal),
     enabled: !!userId,
     refetchInterval: 60_000, // keep dashboard reasonably fresh
