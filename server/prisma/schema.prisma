@@ -74,6 +74,7 @@ enum KnowledgeVisibility {
 }
 
 enum NotificationType {
+  TICKET_SATISFACTION_RECEIVED
   TICKET_ASSIGNED
   TICKET_UNASSIGNED
   TICKET_STATUS_CHANGED
@@ -129,6 +130,9 @@ model User {
   notificationsReceived     Notification[]           @relation("NotificationRecipient")
   notificationsActed        Notification[]           @relation("NotificationActor")
   notificationPreference    NotificationPreference?
+  resolutionRequests        TicketResolutionCycle[]  @relation("ResolutionRequester")
+  resolutionAssignments     TicketResolutionCycle[]  @relation("ResolutionAgent")
+  satisfactions             TicketSatisfaction[]
 
   @@index([email])
   @@index([role])
@@ -254,10 +258,12 @@ model Ticket {
   resolutionCompletedAt        DateTime?
   resolutionBreachedAt         DateTime?
   resolutionPausedAt           DateTime?
-  resolutionPausedSeconds      Int            @default(0)
-  resolutionPausedMilliseconds Float          @default(0)
-  slaVersion                   Int            @default(0)
+  resolutionPausedSeconds      Int                     @default(0)
+  resolutionPausedMilliseconds Float                   @default(0)
+  slaVersion                   Int                     @default(0)
   pendingReason                PendingReason?
+  satisfactionCycleNumber      Int                     @default(0)
+  resolutionCycles             TicketResolutionCycle[]
 
   comments    Comment[]
   history     TicketHistory[]
@@ -290,6 +296,44 @@ model SlaPolicy {
   updatedAt            DateTime       @updatedAt
 
   @@map("sla_policies")
+}
+
+// Immutable completion snapshots also cover tickets without an SLA. Existing
+// completed tickets deliberately receive no fabricated completion cycle.
+model TicketResolutionCycle {
+  id                 String              @id @default(uuid())
+  ticketId           String
+  ticket             Ticket              @relation(fields: [ticketId], references: [id], onDelete: Restrict)
+  number             Int
+  requesterId        String
+  requester          User                @relation("ResolutionRequester", fields: [requesterId], references: [id], onDelete: Restrict)
+  assignedAgentId    String?
+  assignedAgent      User?               @relation("ResolutionAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  departmentSnapshot String?             @db.VarChar(100)
+  resolvedAt         DateTime
+  satisfaction       TicketSatisfaction?
+
+  @@unique([ticketId, number])
+  @@index([requesterId, resolvedAt])
+  @@index([assignedAgentId, resolvedAt])
+  @@map("ticket_resolution_cycles")
+}
+
+model TicketSatisfaction {
+  id          String                @id @default(uuid())
+  cycleId     String                @unique
+  cycle       TicketResolutionCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  requesterId String
+  requester   User                  @relation(fields: [requesterId], references: [id], onDelete: Restrict)
+  rating      Int
+  comment     String?               @db.VarChar(1000)
+  version     Int                   @default(1)
+  submittedAt DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@index([requesterId, submittedAt])
+  @@index([submittedAt])
+  @@map("ticket_satisfactions")
 }
 
 model Comment {

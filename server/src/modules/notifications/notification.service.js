@@ -58,6 +58,7 @@ async function writeNotifications(tx, { actorId = null, entries }) {
   const data = candidates.filter((entry) => {
     const recipient = activeUsersById.get(entry.recipientId);
     if (!recipient) return false;
+    if (entry.type === 'TICKET_SATISFACTION_RECEIVED' && recipient.role !== 'AGENT') return false;
     if (entry.type.startsWith('SLA_') && !['AGENT', 'ADMIN'].includes(recipient.role)) return false;
     const preferenceField = TYPE_PREFERENCE_FIELD[entry.type];
     return !preferenceField || preferencesByUserId.get(entry.recipientId)?.[preferenceField] !== false;

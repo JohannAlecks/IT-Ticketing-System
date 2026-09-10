@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { recordResolution } = require('../satisfaction/satisfaction.service');
 const AppError = require('../../utils/AppError');
 const fs = require('fs');
 const { resolveUploadPath } = require('../../middleware/upload');
@@ -43,7 +44,7 @@ const ALLOWED_TRANSITIONS = {
 function exposeTicket(ticket, user, now = new Date()) {
   if (!ticket) return ticket;
   const {
-    archivedById, archivedBy,
+    archivedById, archivedBy, satisfactionCycleNumber,
     slaPolicyId, slaPolicyName, slaFirstResponseMinutes, slaResolutionMinutes, slaDueSoonMinutes,
     firstResponseDueAt, firstResponseDueSoonAt, firstRespondedAt, firstResponseBreachedAt,
     resolutionCycleStartedAt, resolutionDueAt, resolutionDueSoonAt, resolutionCompletedAt,
@@ -357,9 +358,11 @@ async function updateTicket(id, data, user) {
 
     const result = await tx.ticket.updateMany({
       where: { id, archivedAt: null, status: existing.status, priority: existing.priority, assignedToId: existing.assignedToId, updatedAt: existing.updatedAt, slaVersion: existing.slaVersion },
-      data: { ...updateData, slaVersion: { increment: 1 } },
+      data: { ...updateData, slaVersion: { increment: 1 }, ...(data.status === 'RESOLVED' && existing.status !== 'RESOLVED' ? { satisfactionCycleNumber: { increment: 1 } } : {}) },
     });
     if (result.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
+
+    if (data.status === 'RESOLVED' && existing.status !== 'RESOLVED') await recordResolution(tx, existing, user, now);
 
     const updated = await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) });
     if (historyEntries.length) await tx.ticketHistory.createMany({ data: historyEntries });
@@ -500,6 +503,7 @@ async function deleteTicket(id, auditContext = {}) {
     });
     if (!existing) throw new AppError('Ticket not found', 404);
     assertTicketIsActive(existing);
+    if (existing.satisfactionCycleNumber > 0) throw new AppError('Tickets with completed feedback cycles must be archived instead of deleted', 409);
     // All paths must be valid before the cascade removes any attachment
     // metadata. This prevents an unsafe row from producing a partial delete.
     const inventory = existing.attachments.map((attachment) => ({ ...attachment, absolutePath: resolveUploadPath(attachment.storagePath) }));

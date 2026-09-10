@@ -107,6 +107,9 @@ html[data-theme='dark'] .notification-feedback-error { background-color: rgb(127
 html[data-theme='dark'] .notification-feedback-error-text { color: #fca5a5; }
 html[data-theme='dark'] .notification-feedback-success { color: #86efac; }
 
+/* CSAT uses native radios and existing semantic surfaces. */
+.csat-rating:focus-within { outline: 2px solid #2563eb; outline-offset: 2px; }
+html[data-theme='dark'] .csat-rating:focus-within { outline-color: #93c5fd; }
 /* SLA badges retain state text contrast in dark mode; state is also written
    into the badge, so color is supplemental rather than the only signal. */
 html[data-theme='dark'] [data-sla-state='NOT_APPLICABLE'] { background-color: rgb(71 85 105 / 35%); border-color: #64748b; color: #cbd5e1; }

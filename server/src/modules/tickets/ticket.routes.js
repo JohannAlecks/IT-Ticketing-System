@@ -20,6 +20,7 @@ const commentRoutes = require('../comments/comment.routes');
 const attachmentRoutes = require('../attachments/attachment.routes');
 
 router.use(authenticate); // every ticket route requires auth
+router.use('/:ticketId/satisfaction', require('../satisfaction/satisfaction.routes').ticketRouter);
 
 router.get('/', validate(listQuerySchema, 'query'), ticketController.listTickets);
 router.get('/:id', validateUuidParam('id'), ticketController.getTicket);

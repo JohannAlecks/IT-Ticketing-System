@@ -31,6 +31,12 @@ test('mandatory breach preferences and role-inappropriate SLA fields cannot be p
   expect(preferencePatchSchema.safeParse({ slaBreached: false }).success).toBe(false);
   await expect(service.updateNotificationPreferences({ ...OWNER, role: 'USER' }, { slaDueSoon: false })).rejects.toMatchObject({ statusCode: 422 });
 });
+test('CSAT alert accepts only active attributed Agents, never an actor, requester or Admin', async () => {
+  mockPrisma.user.findMany.mockResolvedValue([{ id: OWNER.id, role: 'AGENT' }, { id: OTHER, role: 'ADMIN' }, { id: 'requester', role: 'USER' }]);
+  await service.writeNotifications(mockPrisma, { actorId: 'requester', entries: [OWNER.id, OTHER, 'requester', 'inactive'].map((recipientId) => service.eventEntry({ recipientId, type: 'TICKET_SATISFACTION_RECEIVED', ticketId: ID, title: 'Feedback received', message: 'New satisfaction feedback was submitted for a resolved ticket.', eventId: 'cycle' })) });
+  expect(mockPrisma.notification.createMany.mock.calls[0][0].data.map((entry) => entry.recipientId)).toEqual([OWNER.id]);
+  expect(listQuerySchema.safeParse({ type: 'TICKET_SATISFACTION_RECEIVED' }).success).toBe(true);
+});
 
 beforeEach(() => {
   jest.clearAllMocks();

@@ -8,6 +8,10 @@ const controller = require('./report.controller');
 const router = express.Router();
 
 router.use(authenticate, authorize('AGENT', 'ADMIN'));
+router.get('/satisfaction', validate(require('../satisfaction/satisfaction.schema').csatReportSchema, 'query'), require('../../utils/asyncHandler')(async (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ success: true, data: await require('../satisfaction/satisfaction.reports').report(req.user, req.query) });
+}));
 router.get('/summary', validate(reportQuerySchema, 'query'), controller.getSummary);
 router.get('/tickets/export', validate(exportQuerySchema, 'query'), controller.exportTickets);
 router.get('/tickets', validate(ticketQuerySchema, 'query'), controller.listTickets);

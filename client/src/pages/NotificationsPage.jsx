@@ -17,6 +17,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const typeLabels = {
+  TICKET_SATISFACTION_RECEIVED: 'Support satisfaction received',
   TICKET_ASSIGNED: 'Ticket assigned',
   TICKET_UNASSIGNED: 'Ticket unassigned',
   TICKET_STATUS_CHANGED: 'Ticket status changed',

@@ -2,7 +2,8 @@ jest.mock('../../../config/prisma', () => ({
   ticket: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn(), updateMany: jest.fn() },
   slaPolicy: { findFirst: jest.fn() },
   comment: { create: jest.fn() }, ticketHistory: { create: jest.fn(), createMany: jest.fn() },
-  auditEvent: { create: jest.fn() }, user: { findMany: jest.fn() },
+  auditEvent: { create: jest.fn() }, user: { findMany: jest.fn(), findUnique: jest.fn() },
+  ticketResolutionCycle: { create: jest.fn() },
   notification: { createMany: jest.fn() }, notificationPreference: { findMany: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(require('../../../config/prisma'))),
 }));

@@ -32,6 +32,7 @@ jest.mock('../../../config/prisma', () => ({
   },
   auditEvent: { create: jest.fn() },
   slaPolicy: { findFirst: jest.fn() },
+  ticketResolutionCycle: { create: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
 }));
 
@@ -67,6 +68,22 @@ beforeEach(() => {
 });
 
 describe('getTicketById — visibility', () => {
+  test('resolution creates a completion snapshot even without SLA; closing does not create another', async () => {
+    const existing = baseTicket({ status: 'IN_PROGRESS', assignedToId: AGENT_A.id, satisfactionCycleNumber: 2 });
+    mockPrisma.ticket.findUnique.mockResolvedValue(existing);
+    mockPrisma.user.findUnique.mockResolvedValue({ role: 'AGENT', department: 'IT' });
+    await ticketService.updateTicket(existing.id, { status: 'RESOLVED' }, AGENT_A);
+    expect(mockPrisma.ticket.updateMany.mock.calls[0][0].data.satisfactionCycleNumber).toEqual({ increment: 1 });
+    expect(mockPrisma.ticketResolutionCycle.create.mock.calls[0][0].data).toMatchObject({ ticketId: existing.id, number: 3, assignedAgentId: AGENT_A.id, requesterId: USER.id });
+    mockPrisma.ticketResolutionCycle.create.mockClear();
+    existing.status = 'RESOLVED'; await ticketService.updateTicket(existing.id, { status: 'CLOSED' }, AGENT_A);
+    expect(mockPrisma.ticketResolutionCycle.create).not.toHaveBeenCalled();
+  });
+  test('preserved completion cycles block permanent ticket removal', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket({ satisfactionCycleNumber: 1 }));
+    await expect(ticketService.deleteTicket('ticket-1')).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.ticket.deleteMany).not.toHaveBeenCalled();
+  });
   test('USER can fetch their own ticket', async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue(baseTicket());
     await expect(ticketService.getTicketById('ticket-1', USER)).resolves.toBeTruthy();

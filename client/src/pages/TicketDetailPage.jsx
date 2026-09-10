@@ -14,6 +14,7 @@ import CommentForm from '../components/tickets/CommentForm';
 import HistoryTimeline from '../components/tickets/HistoryTimeline';
 import TicketAttachments from '../components/tickets/TicketAttachments';
 import SlaDetails from '../components/sla/SlaDetails';
+import TicketSatisfaction from '../components/satisfaction/TicketSatisfaction';
 import { canArchiveTicket } from '../components/tickets/ticketArchivePolicy';
 import { formatDateTime, shortId } from '../utils/format';
 import { categoryLabel } from '../constants/ticketCategories';
@@ -216,6 +217,7 @@ export default function TicketDetailPage() {
           </div>
 
           {/* Tabs: comments / activity */}
+          <TicketSatisfaction ticket={ticket} />
           <div className="card p-5">
             <div className="mb-4 flex gap-4 border-b border-gray-100">
               <button

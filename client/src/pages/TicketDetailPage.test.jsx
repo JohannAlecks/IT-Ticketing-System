@@ -13,6 +13,7 @@ const hooks = vi.hoisted(() => ({
 }));
 
 vi.mock('../context/AuthContext', () => ({ useAuth: () => hooks.auth }));
+vi.mock('../hooks/useSatisfaction', () => ({ useSatisfaction: () => ({ data: { cycles: [] } }), useSaveSatisfaction: () => ({}) }));
 vi.mock('../hooks/useTickets', () => ({
   useTicket: () => hooks.ticketQuery,
   useDeleteTicket: () => hooks.remove,

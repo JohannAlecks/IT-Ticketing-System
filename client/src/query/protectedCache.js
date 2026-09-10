@@ -32,6 +32,7 @@ export const protectedQueryKeys = {
   workload: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'dashboard', 'agent-workload'],
   reports: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'reports'],
   slaPolicies: (userId, role) => scopedKey(userId, role, ['sla-policies']),
+  satisfaction: (userId, role) => scopedKey(userId, role, ['satisfaction']),
   users: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'users'],
   agents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'agents'],
   auditEvents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'audit-events'],

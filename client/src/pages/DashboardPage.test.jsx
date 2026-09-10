@@ -14,6 +14,7 @@ const summaryQuery = vi.hoisted(() => ({
 
 vi.mock('../context/AuthContext', () => ({ useAuth: () => authState }));
 vi.mock('../hooks/useDashboard', () => ({ useDashboardSummary: () => summaryQuery }));
+vi.mock('../hooks/useSatisfaction', () => ({ useCsatReport: () => ({ data: { responses: 0, average: null } }) }));
 
 const definitions = {
   activeStatuses: ['OPEN', 'IN_PROGRESS', 'PENDING'],

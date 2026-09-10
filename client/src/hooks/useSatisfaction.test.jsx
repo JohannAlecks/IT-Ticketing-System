@@ -1,0 +1,36 @@
+import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, beforeEach, it, expect, vi } from 'vitest';
+import { useSatisfaction, useSaveSatisfaction } from './useSatisfaction';
+import { clearProtectedCache, protectedQueryKeys } from '../query/protectedCache';
+const auth = vi.hoisted(() => ({ user: { id: 'first' }, role: 'USER' }));
+const api = vi.hoisted(() => ({ ticket: vi.fn(), save: vi.fn() }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+vi.mock('../api/satisfaction.api', () => ({ satisfactionApi: api }));
+beforeEach(() => { vi.resetAllMocks(); auth.user = { id: 'first' }; auth.role = 'USER'; });
+afterEach(cleanup);
+const wrap = (client) => ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+it('accounts never reuse protected feedback and queries receive cancellation signals', async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  api.ticket.mockResolvedValueOnce({ cycles: ['first-account'] }).mockResolvedValueOnce({ cycles: ['second-account'] });
+  const hook = renderHook(() => useSatisfaction({ id: 'ticket', status: 'RESOLVED' }), { wrapper: wrap(client) });
+  await waitFor(() => expect(hook.result.current.data?.cycles).toEqual(['first-account']));
+  expect(api.ticket).toHaveBeenCalledWith('ticket', { page: 1, limit: 10 }, expect.any(AbortSignal));
+  await act(async () => { await clearProtectedCache(client); auth.user = { id: 'second' }; hook.rerender(); });
+  expect(hook.result.current.data?.cycles).not.toEqual(['first-account']);
+  await waitFor(() => expect(hook.result.current.data?.cycles).toEqual(['second-account']));
+  expect(client.getQueryCache().findAll({ queryKey: protectedQueryKeys.satisfaction('first', 'USER') })).toHaveLength(0);
+  client.clear();
+});
+it('a late mutation cannot recreate caches after logout or invalidate another account', async () => {
+  const client = new QueryClient(); let finish;
+  api.save.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const hook = renderHook(() => useSaveSatisfaction('ticket', 'cycle'), { wrapper: wrap(client) });
+  const spy = vi.spyOn(client, 'invalidateQueries');
+  let pending; act(() => { pending = hook.result.current.mutateAsync({ payload: { rating: 5 }, token: 'version', update: false }); });
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await act(async () => { await clearProtectedCache(client); auth.user = null; hook.rerender(); });
+  await act(async () => { finish({}); await pending; });
+  expect(spy).not.toHaveBeenCalled(); expect(client.getQueryCache().getAll()).toHaveLength(0);
+  client.clear();
+});

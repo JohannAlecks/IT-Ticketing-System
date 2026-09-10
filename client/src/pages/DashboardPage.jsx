@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import CsatReport from '../components/satisfaction/CsatReport';
 import { AlertTriangle, CheckCircle2, CircleDot, Clock, Plus, Ticket, TimerReset, User, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDashboardSummary } from '../hooks/useDashboard';
@@ -358,6 +359,7 @@ function AdminSummary({ summary, windowDays }) {
 }
 
 const ROLE_SUMMARIES = { USER: UserSummary, AGENT: AgentSummary, ADMIN: AdminSummary };
+// Separate protected CSAT query keeps requester dashboards free of staff data.
 
 export default function DashboardPage() {
   const { role: authRole, user } = useAuth();
@@ -393,6 +395,7 @@ export default function DashboardPage() {
       <SummaryHeader role={role} user={user} windowDays={windowDays} />
       <OnboardingGuidance role={role} onboarding={summary.onboarding} />
       <RoleSummary summary={summary} windowDays={windowDays} />
+      <CsatReport summary />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import ReportsFilters from '../components/reports/ReportsFilters';
 import ReportMetricCard from '../components/reports/ReportMetricCard';
 import ReportOperations from '../components/reports/ReportOperations';
 import SlaReportMetrics from '../components/reports/SlaReportMetrics';
+import CsatReport from '../components/satisfaction/CsatReport';
 import ReportsTable from '../components/reports/ReportsTable';
 import ReportTrend from '../components/reports/ReportTrend';
 import { ReportsEmptyState, ReportsErrorState, ReportsLoadingState } from '../components/reports/ReportsStates';
@@ -468,6 +469,7 @@ export default function ReportsPage() {
       <ReportMetrics role={isAdmin ? 'ADMIN' : 'AGENT'} summary={summary} />
 
       <SlaReportMetrics sla={summary.sla} />
+      <CsatReport filters={committedFilters} />
 
       <ReportTrend role={isAdmin ? 'ADMIN' : 'AGENT'} trends={summary?.trends} />
 

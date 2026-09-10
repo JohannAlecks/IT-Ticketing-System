@@ -14,6 +14,10 @@ function errorHandler(err, req, res, next) {
     statusCode = 404;
     message = 'Record not found';
   }
+  if (err.code === 'P2003') {
+    statusCode = 409;
+    message = 'This record has preserved related data and cannot be removed.';
+  }
   if (err.code === 'P2034') {
     statusCode = 409;
     message = 'This record was changed by another request. Refresh and try again.';

@@ -12,5 +12,6 @@ router.use('/onboarding', require('../modules/onboarding/onboarding.routes'));
 router.use('/knowledge', require('../modules/knowledge/knowledge.routes'));
 router.use('/notifications', require('../modules/notifications/notification.routes'));
 router.use('/sla', require('../modules/sla/sla.routes'));
+router.use('/satisfaction', require('../modules/satisfaction/satisfaction.routes').router);
 
 module.exports = router;

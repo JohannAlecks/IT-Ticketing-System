@@ -43,6 +43,7 @@ describeDb('SLA local database integration (requires RUN_SLA_DB_TESTS=true)', ()
       await db.notification.deleteMany({ where: { OR: [{ ticketId: { in: ids.tickets } }, { recipientId: { in: ids.users } }] } });
       await db.auditEvent.deleteMany({ where: { OR: [{ entityType: 'ticket', entityId: { in: ids.tickets } }, { actorUserId: { in: ids.users } }] } });
       await db.ticketHistory.deleteMany({ where: { ticketId: { in: ids.tickets } } });
+      await db.ticketResolutionCycle.deleteMany({ where: { ticketId: { in: ids.tickets } } });
       await db.ticket.deleteMany({ where: { id: { in: ids.tickets } } });
       await db.user.deleteMany({ where: { id: { in: ids.users } } });
       expect(await db.ticket.count({ where: { id: { in: ids.tickets } } })).toBe(0);

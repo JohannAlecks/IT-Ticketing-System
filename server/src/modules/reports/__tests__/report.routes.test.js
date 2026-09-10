@@ -4,7 +4,7 @@ const reportRoutes = require('../report.routes');
 
 test('reports router mounts authenticate then AGENT/ADMIN authorization before all endpoints', () => {
   const paths = reportRoutes.stack.filter((layer) => layer.route).map((layer) => layer.route.path);
-  expect(paths).toEqual(['/summary', '/tickets/export', '/tickets']);
+  expect(paths).toEqual(['/satisfaction', '/summary', '/tickets/export', '/tickets']);
   expect(reportRoutes.stack[0].handle).toBe(authenticate);
 });
 

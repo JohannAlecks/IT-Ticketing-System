@@ -12,6 +12,7 @@ const reportsState = vi.hoisted(() => ({
 const exportMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../context/AuthContext', () => ({ useAuth: () => authState }));
+vi.mock('../hooks/useSatisfaction', () => ({ useCsatReport: () => ({ data: { responses: 0, average: null, distribution: {}, feedback: [], trend: [], pagination: { totalPages: 0 } } }) }));
 vi.mock('../hooks/useReports', async () => {
   const actual = await vi.importActual('../hooks/useReports');
   return {
@@ -253,9 +254,9 @@ describe('ReportsPage', () => {
 
   it('includes both desktop semantic table and mobile card structures', () => {
     renderPage(adminSummary, 'ADMIN');
-    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Detailed report tickets' })).toBeInTheDocument();
     expect(screen.getByLabelText('Detailed report ticket cards')).toBeInTheDocument();
     expect(screen.getByLabelText('Detailed report ticket cards').className).toContain('md:hidden');
-    expect(screen.getByRole('table').parentElement.className).toContain('hidden');
+    expect(screen.getByRole('table', { name: 'Detailed report tickets' }).parentElement.className).toContain('hidden');
   });
 });
