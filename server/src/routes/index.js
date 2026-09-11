@@ -15,5 +15,6 @@ router.use('/sla', require('../modules/sla/sla.routes'));
 router.use('/satisfaction', require('../modules/satisfaction/satisfaction.routes').router);
 router.use('/saved-views', require('../modules/personal/personal.routes').views);
 router.use('/shortcuts', require('../modules/personal/personal.routes').shortcuts);
+router.use('/search', require('../modules/search/search.routes'));
 
 module.exports = router;

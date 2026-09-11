@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Plus, X } from 'lucide-react';
 import { useUsers, useCreateUser, useUpdateUserRole, useDeactivateUser, useReactivateUser } from '../hooks/useUsers';
 import { useAuth } from '../context/AuthContext';
@@ -59,7 +60,9 @@ function CreateUserModal({ onClose }) {
 }
 
 export default function UsersPage() {
-  const [status, setStatus] = useState('ACTIVE');
+  const [url] = useSearchParams();
+  const location = useLocation();
+  const [status, setStatus] = useState(() => ['ACTIVE', 'INACTIVE', 'ALL'].includes(url.get('status')) ? url.get('status') : 'ACTIVE');
   const { data: users, isLoading, isError } = useUsers({ status });
   const updateRole = useUpdateUserRole();
   const deactivate = useDeactivateUser();
@@ -67,6 +70,13 @@ export default function UsersPage() {
   const { user: currentUser } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [userToChange, setUserToChange] = useState(null);
+  const urlStatus = url.get('status');
+  useEffect(() => { if (['ACTIVE', 'INACTIVE', 'ALL'].includes(urlStatus)) setStatus(urlStatus); }, [urlStatus]);
+  useEffect(() => {
+    if (!/^#user-[a-f\d-]{36}$/i.test(location.hash)) return;
+    const row = document.getElementById(location.hash.slice(1));
+    row?.scrollIntoView?.({ block: 'center' }); row?.focus();
+  }, [location.hash, users]);
 
   const confirmStatusChange = () => {
     if (userToChange.isActive) deactivate.mutate(userToChange.id, { onSuccess: () => setUserToChange(null) });
@@ -106,7 +116,7 @@ export default function UsersPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {users.map((u) => (
-                <tr key={u.id}>
+                <tr key={u.id} id={`user-${u.id}`} tabIndex={-1}>
                   <td className="px-4 py-4 font-semibold text-slate-800">{u.name}</td>
                   <td className="px-4 py-4 text-slate-600">{u.email}</td>
                   <td className="px-4 py-4 text-slate-600">{u.department || 'Not specified'}</td>

@@ -9,6 +9,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage';
 import DashboardPage from './pages/DashboardPage';
 import TicketListPage from './pages/TicketListPage';
 import SavedTicketViewPage from './pages/SavedTicketViewPage';
+import SearchPage from './pages/SearchPage';
 import ArchivedWorkItemsPage from './pages/ArchivedWorkItemsPage';
 import MyAssignedTicketsPage from './pages/MyAssignedTicketsPage';
 import TicketDetailPage from './pages/TicketDetailPage';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/tickets" element={<TicketListPage />} />
           <Route path="/saved-views/:id" element={<SavedTicketViewPage />} />
+          <Route path="/search" element={<SearchPage />} />
           <Route path="/tickets/new" element={<CreateTicketPage />} />
           <Route path="/tickets/archived" element={<ArchivedWorkItemsPage />} />
           <Route path="/tickets/:id" element={<TicketDetailPage />} />

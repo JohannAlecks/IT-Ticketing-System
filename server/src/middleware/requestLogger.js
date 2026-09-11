@@ -12,7 +12,7 @@ function requestLogger(req, res, next) {
       userId: req.user?.id, ip: req.ip,
     };
     if (env.LOG_FORMAT === 'json') console.log(JSON.stringify(event));
-    else console.log(`${event.method} ${req.originalUrl} ${event.status} ${event.durationMs}ms req=${event.requestId}${event.userId ? ` user=${event.userId}` : ''}`);
+    else console.log(`${event.method} ${event.route} ${event.status} ${event.durationMs}ms req=${event.requestId}${event.userId ? ` user=${event.userId}` : ''}`);
   });
   next();
 }

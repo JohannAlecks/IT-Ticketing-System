@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import Header from './Header';
+vi.mock('../search/GlobalSearch', () => ({ default: () => null }));
 
 const hooks = vi.hoisted(() => ({ unread: { data: { unreadCount: 0 } } }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u-1', name: 'Test User', role: 'USER' }, logout: vi.fn() }) }));
