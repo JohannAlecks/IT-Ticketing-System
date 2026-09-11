@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from './SettingsPage';
+import { MemoryRouter } from 'react-router-dom';
 vi.mock('../components/personal/PersonalShortcuts', () => ({ default: () => null }));
 
 const authState = vi.hoisted(() => ({
@@ -47,7 +48,7 @@ const userPreferences = {
 };
 
 function renderSettings() {
-  return render(<SettingsPage />);
+  return render(<SettingsPage />, { wrapper: ({ children }) => <MemoryRouter initialEntries={['/settings?section=notifications']}>{children}</MemoryRouter> });
 }
 
 function resetQuery(data = userPreferences) {
@@ -72,6 +73,17 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Notifications settings', () => {
+  it('bulk optional controls leave mandatory and role-inappropriate fields untouched', async () => {
+    resetQuery({ preferences: { ...userPreferences.preferences, ticketAssigned: true }, mandatory: ['accountReactivated'] });
+    preferenceMutation.mutateAsync.mockResolvedValue(userPreferences);
+    renderSettings();
+    await screen.findByRole('checkbox', { name: 'Updates to tickets I watch' });
+    expect(screen.queryByRole('checkbox', { name: 'Ticket assigned' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Disable all optional' }));
+    expect(screen.getByRole('checkbox', { name: 'Account reactivated' })).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Save notification preferences' }));
+    await waitFor(() => expect(preferenceMutation.mutateAsync).toHaveBeenCalledWith({ ticketPublicReply: false, ticketWatchedUpdates: false }));
+  });
   it('saves watched updates through existing preferences and explains internal-note exclusion', async () => {
     preferenceMutation.mutateAsync.mockResolvedValue({ ...userPreferences, preferences: { ...userPreferences.preferences, ticketWatchedUpdates: false } });
     renderSettings();
@@ -181,6 +193,7 @@ describe('Notifications settings', () => {
       preferences: { knowledgePublished: true, accountReactivated: true },
       mandatory: ['accountReactivated'],
     };
+    authState.role = 'AGENT';
     preferenceQuery.isPending = false;
     preferenceQuery.isLoading = false;
     rerender(<SettingsPage />);

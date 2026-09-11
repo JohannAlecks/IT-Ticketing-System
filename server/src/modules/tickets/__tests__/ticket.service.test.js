@@ -9,6 +9,7 @@
  */
 
 jest.mock('../../../config/prisma', () => ({
+  $queryRaw: jest.fn(),
   ticket: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),

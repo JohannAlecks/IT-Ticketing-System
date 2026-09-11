@@ -1,5 +1,6 @@
 jest.mock('../../../config/prisma', () => ({
-  user: { findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  $queryRaw: jest.fn(),
+  user: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   notification: { createMany: jest.fn() },
   notificationPreference: { findMany: jest.fn() },
   ticket: { findMany: jest.fn(), updateMany: jest.fn() },
@@ -18,6 +19,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.auditEvent.create.mockResolvedValue({ id: 'audit-event-1' });
   mockPrisma.user.findMany.mockResolvedValue([]);
+  mockPrisma.user.findFirst.mockResolvedValue({ id: 'admin-1' });
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
@@ -57,6 +59,19 @@ describe('reactivateUser', () => {
 
 describe('changeUserLifecycle', () => {
   const ACTIVE_ADMIN = { ...INACTIVE_AGENT, id: 'admin-2', role: 'ADMIN', isActive: true };
+  test('rechecks acting Admin and strictly rejects generic mixed/invalid changes', async () => {
+    await expect(userService.changeUserLifecycle('other', { role: 'ADMIN', isActive: false }, ACTOR)).rejects.toMatchObject({ statusCode: 422 });
+    await expect(userService.updateUserRole('other', 'OWNER', ACTOR)).rejects.toMatchObject({ statusCode: 422 });
+    mockPrisma.user.findFirst.mockResolvedValue(null);
+    await expect(userService.deactivateUser('other', ACTOR)).rejects.toMatchObject({ statusCode: 403 });
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+  test('self-deactivation and last-active-Admin deactivation are blocked server-side', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ ...ACTIVE_ADMIN, id: ACTOR.id });
+    await expect(userService.deactivateUser(ACTOR.id, ACTOR)).rejects.toMatchObject({ statusCode: 403 });
+    mockPrisma.user.findUnique.mockResolvedValue(ACTIVE_ADMIN); mockPrisma.user.count.mockResolvedValue(1);
+    await expect(userService.deactivateUser(ACTIVE_ADMIN.id, ACTOR)).rejects.toMatchObject({ statusCode: 409 });
+  });
 
   test('blocks self-demotion and writes no audit event', async () => {
     mockPrisma.user.findUnique.mockResolvedValue({ ...ACTIVE_ADMIN, id: ACTOR.id });

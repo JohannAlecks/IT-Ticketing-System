@@ -24,7 +24,8 @@ export function AuthProvider({ children }) {
     setIsLoading(false);
   }, [queryClient]);
 
-  const setAuthenticatedUser = useCallback(async (nextUser) => {
+  const setAuthenticatedUser = useCallback(async (nextUser, isCurrent = () => true) => {
+    const generation = sessionGeneration.current;
     const nextIdentity = nextUser?.id ? {
       id: nextUser.id,
       role: String(nextUser.role || '').toUpperCase(),
@@ -35,6 +36,7 @@ export function AuthProvider({ children }) {
     )) {
       await clearProtectedCache(queryClient);
     }
+    if (generation !== sessionGeneration.current || !isCurrent()) return;
     previousIdentity.current = nextIdentity;
     setUser(nextUser);
   }, [queryClient]);
@@ -88,9 +90,11 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (credentials) => {
     sessionGeneration.current += 1;
+    const generation = sessionGeneration.current;
     restoreController.current?.abort();
     restoreController.current = null;
     const { user: loggedInUser, token } = await authApi.login(credentials);
+    if (generation !== sessionGeneration.current) throw new Error('Sign-in was superseded by another session action');
     localStorage.setItem('token', token);
     await setAuthenticatedUser(loggedInUser);
     return loggedInUser;
@@ -107,7 +111,26 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     clearSession();
   }, [clearSession]);
-  const updateUser = useCallback((nextUser) => setAuthenticatedUser(nextUser), [setAuthenticatedUser]);
+  const updateUser = useCallback((nextUser) => {
+    sessionGeneration.current += 1;
+    return setAuthenticatedUser(nextUser);
+  }, [setAuthenticatedUser]);
+
+  // Revalidate the account, not JWT role claims, after Admin lifecycle changes.
+  // Never let a late refresh restore a logged-out or switched account.
+  useEffect(() => {
+    if (!user?.id) return;
+    let controller;
+    const refresh = async () => {
+      controller?.abort(); controller = new AbortController();
+      const current = controller; const generation = sessionGeneration.current; const token = localStorage.getItem('token');
+      try { const next = await authApi.me(current.signal);
+        if (!current.signal.aborted && generation === sessionGeneration.current && localStorage.getItem('token') === token) await setAuthenticatedUser(next, () => !current.signal.aborted && localStorage.getItem('token') === token);
+      } catch (error) { if (!current.signal.aborted && generation === sessionGeneration.current && error.response?.status === 401) clearSession(); }
+    };
+    const interval = window.setInterval(refresh, 60_000); window.addEventListener('focus', refresh);
+    return () => { controller?.abort(); window.clearInterval(interval); window.removeEventListener('focus', refresh); };
+  }, [user?.id, setAuthenticatedUser, clearSession]);
 
   const value = {
     user,

@@ -1,4 +1,6 @@
-export default function Input({ label, error, className = '', id, ...props }) {
+import { useId } from 'react';
+export default function Input({ label, error, helperText, className = '', id, ...props }) {
+  const generated = useId(); id = id || generated;
   return (
     <div className="w-full">
       {label && (
@@ -6,8 +8,8 @@ export default function Input({ label, error, className = '', id, ...props }) {
           {label}
         </label>
       )}
-      <input id={id} className={`input ${error ? 'border-red-400 focus:ring-red-400' : ''} ${className}`} {...props} />
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      <input id={id} aria-invalid={error ? true : undefined} aria-describedby={error || helperText ? `${id}-help` : undefined} className={`input ${error ? 'border-red-400 focus:ring-red-400' : ''} ${className}`} {...props} />
+      {(error || helperText) && <p id={`${id}-help`} role={error ? 'alert' : undefined} className={`mt-1 text-xs ${error ? 'text-red-600' : 'text-slate-500'}`}>{error || helperText}</p>}
     </div>
   );
 }

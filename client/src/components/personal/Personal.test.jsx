@@ -104,7 +104,7 @@ it('keyboard-operable ordering sends complete owned versions; rename/remove work
 it('limits, loading, retry and saving states are explicit', () => {
   state.shortcuts.data.shortcuts = Array.from({ length: 8 }, (_, i) => ({ id: String(i), label: `Item ${i}`, available: true }));
   const ui = show(<PersonalShortcuts />);
-  expect(screen.getByText(/8\/8 shortcuts/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Add shortcut' })).toBeDisabled();
+  expect(screen.getByText(/8 of 8 shortcuts/)).toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Add shortcut' })).toBeDisabled();
   state.shortcuts.isError = true; ui.rerender(<MemoryRouter><PersonalShortcuts /></MemoryRouter>);
   fireEvent.click(screen.getByRole('button', { name: 'Retry preferences' })); expect(state.shortcuts.refetch).toHaveBeenCalled();
   state.shortcuts = { isLoading: true }; ui.rerender(<MemoryRouter><PersonalShortcuts /></MemoryRouter>);

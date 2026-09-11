@@ -22,16 +22,43 @@ const ASSIGNMENT_CANDIDATE_SELECT = {
   role: true,
 };
 
-async function listUsers({ role, status = 'ACTIVE' } = {}) {
+const operational = { archivedAt: null, status: { notIn: ['RESOLVED', 'CLOSED'] } };
+async function listUsers({ role, status = 'ACTIVE', search, department, missingDepartment, verification, sort = 'newest', page = 1, limit = 20 } = {}) {
   const where = {
     ...(role ? { role } : {}),
     ...(status === 'ALL' ? {} : { isActive: status === 'ACTIVE' }),
+    ...(search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] } : {}),
+    ...(department ? { department } : {}),
+    ...(missingDepartment === 'true' ? { AND: [{ OR: [{ department: null }, { department: '' }] }] } : {}),
+    ...(verification ? { emailVerified: verification === 'VERIFIED' } : {}),
   };
-  return prisma.user.findMany({
+  const order = { name: { name: 'asc' }, newest: { createdAt: 'desc' }, oldest: { createdAt: 'asc' }, role: { role: 'asc' }, department: { department: 'asc' } }[sort];
+  const [rows, total] = await Promise.all([prisma.user.findMany({
     where,
-    select: SAFE_SELECT,
-    orderBy: { createdAt: 'desc' },
-  });
+    select: { ...SAFE_SELECT, _count: { select: { ticketsAssigned: { where: operational } } } },
+    orderBy: [order, { id: 'asc' }], skip: (page - 1) * limit, take: limit,
+  }), prisma.user.count({ where })]);
+  return { users: rows.map(({ _count, ...user }) => ({ ...user, activeWorkload: _count?.ticketsAssigned || 0 })), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+async function userSummary() {
+  const filters = { total: {}, active: { isActive: true }, inactive: { isActive: false }, admins: { role: 'ADMIN' }, agents: { role: 'AGENT' }, users: { role: 'USER' }, unverified: { emailVerified: false }, withoutDepartment: { OR: [{ department: null }, { department: '' }] } };
+  return Object.fromEntries(await Promise.all(Object.entries(filters).map(async ([key, where]) => [key, await prisma.user.count({ where })])));
+}
+
+async function userDetails(id) {
+  const user = await getUserById(id);
+  const { slaFilterWhere } = require('../sla/sla.engine');
+  const assigned = { assignedToId: id, ...operational };
+  const [activeWorkload, recentTickets, lifecycle, dueSoon, breached, csat] = await Promise.all([
+    prisma.ticket.count({ where: assigned }),
+    prisma.ticket.findMany({ where: { OR: [{ createdById: id }, { assignedToId: id }] }, select: { id: true, title: true, status: true, updatedAt: true, archivedAt: true }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 5 }),
+    prisma.auditEvent.findMany({ where: { entityType: 'user', entityId: id, eventType: { in: ['user.created', 'user.role_changed', 'user.deactivated', 'USER_REACTIVATED'] } }, select: { id: true, eventType: true, createdAt: true }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: 5 }),
+    user.role === 'AGENT' ? prisma.ticket.count({ where: { AND: [assigned, slaFilterWhere('DUE_SOON', new Date())] } }) : null,
+    user.role === 'AGENT' ? prisma.ticket.count({ where: { AND: [assigned, slaFilterWhere('BREACHED', new Date())] } }) : null,
+    user.role === 'AGENT' ? prisma.ticketSatisfaction.aggregate({ where: { cycle: { assignedAgentId: id } }, _count: { rating: true }, _avg: { rating: true } }) : null,
+  ]);
+  return { user, activeWorkload, recentTickets, lifecycle, sla: user.role === 'AGENT' ? { dueSoon, breached } : null, csat: csat ? { count: csat._count.rating, average: csat._avg.rating } : null };
 }
 
 // Convenience endpoint used by the "Assign to" dropdown on the frontend
@@ -69,7 +96,16 @@ async function createUserWithRole({ name, email, password, role }) {
  * last-active-admin invariant.
  */
 async function changeUserLifecycle(id, change, actor, requestId) {
+  if (!actor?.id || actor.role !== 'ADMIN') throw new AppError('Administrator access required', 403);
+  const keys = Object.keys(change);
+  if (keys.length !== 1 || !((keys[0] === 'role' && ['ADMIN', 'AGENT', 'USER'].includes(change.role)) || (keys[0] === 'isActive' && typeof change.isActive === 'boolean'))) throw new AppError('Invalid account change', 422);
   return prisma.$transaction(async (tx) => {
+    // Serialize every role/status endpoint before counting administrators.
+    // READ COMMITTED then sees assignments committed while the account lock
+    // was being acquired; a fixed serializable snapshot would miss those rows.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(73521, 1)::text`;
+    const currentActor = await tx.user.findFirst({ where: { id: actor.id, role: 'ADMIN', isActive: true, emailVerified: true }, select: { id: true } });
+    if (!currentActor) throw new AppError('Administrator access required', 403);
     const target = await tx.user.findUnique({ where: { id }, select: SAFE_SELECT });
     if (!target) throw new AppError('User not found', 404);
 
@@ -107,12 +143,25 @@ async function changeUserLifecycle(id, change, actor, requestId) {
       }
     }
 
+    // Lock/update the account before scanning its assignments. Assignment
+    // creation takes a shared account lock before checking eligibility.
+    const user = await tx.user.update({
+      where: { id },
+      data: { ...(changingRole && { role: nextRole }), ...(changingActiveState && { isActive: nextIsActive }) },
+      select: SAFE_SELECT,
+    });
     let unassignedTickets = 0;
     const losesAssignmentEligibility = (changingActiveState && !nextIsActive) ||
       (changingRole && target.role !== 'USER' && nextRole === 'USER');
     if (losesAssignmentEligibility) {
+      // Freeze qualifying ticket rows before reconciliation, so a concurrent
+      // reassignment or resolution cannot be overwritten or mis-audited.
+      await tx.$queryRaw`SELECT "id" FROM "tickets"
+        WHERE "assignedToId" = ${id} AND "archivedAt" IS NULL
+          AND "status" NOT IN ('RESOLVED', 'CLOSED')
+        ORDER BY "id" FOR UPDATE`;
       const assigned = await tx.ticket.findMany({
-        where: { assignedToId: id, status: { notIn: ['RESOLVED', 'CLOSED'] } },
+        where: { assignedToId: id, ...operational },
         select: { id: true },
       });
       unassignedTickets = assigned.length;
@@ -136,12 +185,6 @@ async function changeUserLifecycle(id, change, actor, requestId) {
         });
       }
     }
-
-    const user = await tx.user.update({
-      where: { id },
-      data: { ...(changingRole && { role: nextRole }), ...(changingActiveState && { isActive: nextIsActive }) },
-      select: SAFE_SELECT,
-    });
 
     const eventType = changingRole
       ? 'user.role_changed'
@@ -177,7 +220,7 @@ async function changeUserLifecycle(id, change, actor, requestId) {
     }
 
     return { user, unassignedTickets };
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'ReadCommitted' });
 }
 
 async function updateUserRole(id, role, actor, requestId) {
@@ -197,6 +240,8 @@ async function reactivateUser(id, actor, requestId) {
 }
 
 module.exports = {
+  userSummary,
+  userDetails,
   listUsers,
   listAgents,
   getUserById,

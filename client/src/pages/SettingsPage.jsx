@@ -1,22 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import PersonalShortcuts from '../components/personal/PersonalShortcuts';
-import toast from 'react-hot-toast';
-import { Bell, Eye, EyeOff, Save, UserRound } from 'lucide-react';
-import { settingsApi } from '../api/settings.api';
+import { Bell, Save } from 'lucide-react';
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { ProfilePanel, AppearancePanel, SecurityPanel, ApplicationPanel } from '../components/settings/AccountPanels';
+import AccountDialog from '../components/ui/AccountDialog';
+import Select from '../components/ui/Select';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
 import { NOTIFICATION_PREFERENCE_KEYS, useNotificationPreferences, useUpdateNotificationPreferences } from '../hooks/useNotifications';
 import Button from '../components/ui/Button';
-import Input from '../components/ui/Input';
 import SlaPolicySettings from '../components/sla/SlaPolicySettings';
 
 function Section({ icon: Icon, title, description, className = '', children }) {
   return <section className={`card p-5 ${className}`}><div className="mb-5 flex gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><Icon className="h-4 w-4" /></div><div><h2 className="font-semibold text-slate-900">{title}</h2><p className="mt-0.5 text-sm text-slate-500">{description}</p></div></div>{children}</section>;
-}
-
-function PasswordField({ label, value, onChange, autoComplete, helperText }) {
-  const [visible, setVisible] = useState(false);
-  return <div><label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label><div className="relative"><input className="input pr-11" type={visible ? 'text' : 'password'} value={value} onChange={onChange} autoComplete={autoComplete} required /><button type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`} onClick={() => setVisible((current) => !current)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-500 hover:bg-slate-100">{visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div>{helperText && <p className="mt-1 text-xs text-slate-500">{helperText}</p>}</div>;
 }
 
 const NOTIFICATION_GROUPS = [
@@ -24,11 +19,17 @@ const NOTIFICATION_GROUPS = [
     title: 'Ticket activity',
     options: [
       { key: 'ticketWatchedUpdates', label: 'Updates to tickets I watch', description: 'Future public updates to authorized tickets you follow. Internal notes are never included.' },
-      { key: 'ticketAssigned', label: 'Ticket assigned', description: 'A ticket is assigned to you.' },
-      { key: 'ticketUnassigned', label: 'Ticket unassigned', description: 'A ticket is unassigned from you.' },
+    ],
+  },
+  { title: 'Ticket assignments', options: [
+      { key: 'ticketAssigned', label: 'Ticket assigned', description: 'A ticket is assigned to you.', roles: ['AGENT', 'ADMIN'] },
+      { key: 'ticketUnassigned', label: 'Ticket unassigned', description: 'A ticket is unassigned from you.', roles: ['AGENT', 'ADMIN'] },
+    ],
+  },
+  { title: 'Ticket status and public replies', options: [
       { key: 'ticketStatusChanged', label: 'Ticket status changed', description: 'A ticket you are involved with changes status.' },
       { key: 'ticketPublicReply', label: 'Ticket public reply', description: 'A public reply is added to a ticket you are involved with.' },
-      { key: 'ticketWorkBlocking', label: 'Ticket work blocking', description: 'A ticket is marked as work-blocking.' },
+      { key: 'ticketWorkBlocking', label: 'Ticket work blocking', description: 'A ticket is marked as work-blocking.', roles: ['ADMIN'] },
     ],
   },
   {
@@ -41,9 +42,9 @@ const NOTIFICATION_GROUPS = [
   {
     title: 'Knowledge Base',
     options: [
-      { key: 'knowledgeSubmitted', label: 'Knowledge submitted', description: 'A knowledge article is submitted for review.' },
-      { key: 'knowledgePublished', label: 'Knowledge published', description: 'A knowledge article is published.' },
-      { key: 'knowledgeReturned', label: 'Knowledge returned', description: 'A knowledge article is returned for changes.' },
+      { key: 'knowledgeSubmitted', label: 'Knowledge submitted', description: 'A knowledge article is submitted for review.', roles: ['ADMIN'] },
+      { key: 'knowledgePublished', label: 'Knowledge published', description: 'A knowledge article is published.', roles: ['AGENT', 'ADMIN'] },
+      { key: 'knowledgeReturned', label: 'Knowledge returned', description: 'A knowledge article is returned for changes.', roles: ['AGENT', 'ADMIN'] },
     ],
   },
   {
@@ -129,7 +130,7 @@ function NotificationPreferencesSection() {
     appliedData.current = { identity, data: preferencesQuery.data };
     const nextPreferences = preferenceValues(preferencesQuery.data);
     setBaseline(nextPreferences);
-    setDraft(nextPreferences);
+    setDraft((current) => Object.fromEntries(Object.entries(nextPreferences).map(([key, value]) => [key, loadedIdentity === identity && current && baseline && current[key] !== baseline[key] ? current[key] : value])));
     setLoadedIdentity(identity);
   }, [identity, preferencesQuery.data]);
 
@@ -192,6 +193,8 @@ function NotificationPreferencesSection() {
   return <Section icon={Bell} title="Notifications" description="Choose which in-app events should notify you." className="lg:col-span-2">
     <div className="space-y-5" aria-busy={saving}>
       <p className="text-sm text-slate-600">These preferences control future in-app notifications. Existing notifications are not removed.</p>
+      <p className="text-sm text-slate-500">Email notification controls are unavailable here. These settings do not send email.</p>
+      {ready && <div className="flex flex-wrap gap-2">{[[true, 'Enable all optional'], [false, 'Disable all optional']].map(([value, label]) => <Button key={label} variant="secondary" disabled={saving} onClick={() => { const keys = visibleGroups.flatMap((group) => group.options).filter((option) => !option.mandatory && !mandatory.has(option.key)).map((option) => option.key); setDraft((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, value])) })); setFeedback(null); }}>{label}</Button>)}</div>}
       {content}
       <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-h-5 text-sm" aria-live="polite">
@@ -207,20 +210,30 @@ function NotificationPreferencesSection() {
   </Section>;
 }
 
+function SettingsLayout() {
+  const { role } = useAuth(); const [params, setParams] = useSearchParams(); const location = useLocation();
+  const [dirty, setDirty] = useState(false); const [pendingSection, setPendingSection] = useState(null);
+  const sections = [['profile', 'Profile'], ['appearance', 'Appearance'], ['notifications', 'Notifications'], ['shortcuts', 'Shortcuts'], ['security', 'Security'], ...(role === 'ADMIN' ? [['application', 'Application settings'], ['sla', 'SLA policies']] : [])];
+  const requested = params.get('section') || (location.hash === '#sla-policies' ? 'sla' : 'profile');
+  const section = sections.some(([key]) => key === requested) ? requested : 'profile';
+  const change = (next) => { const query = new URLSearchParams(params); query.set('section', next); setParams(query); };
+  const navigate = (next) => { if (next === section) return; if (dirty) setPendingSection(next); else change(next); };
+  useEffect(() => {
+    if (!dirty) return;
+    const unload = (event) => { event.preventDefault(); event.returnValue = ''; };
+    const link = (event) => { const anchor = event.target.closest?.('a[href]'); if (anchor && !window.confirm('Discard your unsaved profile changes?')) { event.preventDefault(); event.stopPropagation(); } };
+    window.addEventListener('beforeunload', unload); document.addEventListener('click', link, true);
+    return () => { window.removeEventListener('beforeunload', unload); document.removeEventListener('click', link, true); };
+  }, [dirty]);
+  return <div className="mx-auto max-w-6xl space-y-5"><header><p className="eyebrow text-brand-700">Your workspace</p><h1 className="page-title">Settings</h1><p className="page-subtitle">Manage your identity, preferences, and account security.</p></header>
+    <div className="md:hidden"><Select label="Settings section" value={section} onChange={(e) => navigate(e.target.value)}>{sections.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select></div>
+    <div className="grid min-w-0 gap-5 md:grid-cols-[210px_minmax(0,1fr)]"><nav aria-label="Settings sections" className="card hidden h-fit space-y-1 p-2 md:block">{sections.map(([key, label]) => <button key={key} onClick={() => navigate(key)} aria-current={section === key ? 'page' : undefined} className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium ${section === key ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>)}</nav>
+      <div className="min-w-0">{section === 'profile' && <ProfilePanel onDirtyChange={setDirty} />}{section === 'appearance' && <AppearancePanel />}{section === 'notifications' && <NotificationPreferencesSection />}{section === 'shortcuts' && <PersonalShortcuts />}{section === 'security' && <SecurityPanel />}{role === 'ADMIN' && section === 'application' && <ApplicationPanel />}{role === 'ADMIN' && section === 'sla' && <SlaPolicySettings />}</div>
+    </div>
+    {pendingSection && <AccountDialog title="Discard profile changes?" onClose={() => setPendingSection(null)}><p>Your unsaved name and department edits will be lost.</p><div className="mt-5 flex gap-3"><Button variant="secondary" onClick={() => setPendingSection(null)}>Keep editing</Button><Button onClick={() => { setDirty(false); change(pendingSection); setPendingSection(null); }}>Discard and continue</Button></div></AccountDialog>}
+  </div>;
+}
 export default function SettingsPage() {
-  const { user, role, updateUser } = useAuth();
-  const { theme, setTheme } = useTheme();
-  const [name, setName] = useState(user?.name || '');
-  const [department, setDepartment] = useState(user?.department || '');
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
-  const [savingPassword, setSavingPassword] = useState(false);
-  const saveProfile = async (event) => { event.preventDefault(); setSavingProfile(true); try { updateUser(await settingsApi.updateProfile({ name, department: department.trim() || null })); toast.success('Profile updated'); } catch (error) { toast.error(error.response?.data?.message || 'Could not update your profile'); } finally { setSavingProfile(false); } };
-  const savePassword = async (event) => { event.preventDefault(); if (passwords.newPassword !== passwords.confirmPassword) return toast.error('New passwords do not match'); setSavingPassword(true); try { await settingsApi.changePassword({ currentPassword: passwords.currentPassword, newPassword: passwords.newPassword }); setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' }); toast.success('Password updated'); } catch (error) { toast.error(error.response?.data?.message || 'Could not change your password'); } finally { setSavingPassword(false); } };
-  const rules = [['At least 8 characters', passwords.newPassword.length >= 8], ['1 uppercase letter', /[A-Z]/.test(passwords.newPassword)], ['1 lowercase letter', /[a-z]/.test(passwords.newPassword)], ['1 number', /\d/.test(passwords.newPassword)], ['1 special character', /[^A-Za-z0-9]/.test(passwords.newPassword)]];
-  const passwordValid = rules.every(([, valid]) => valid) && passwords.currentPassword && passwords.newPassword === passwords.confirmPassword;
-  const departments = ['Human Resources','Information Technology','Finance','Accounting','Operations','Administration','Marketing','Sales','Customer Support','Procurement','Engineering','Legal','Executive'];
-  const isCustom = department && !departments.includes(department);
-  const normalizedRole = String(role || user?.role || '').toUpperCase();
-  return <div className="mx-auto max-w-4xl space-y-5"><div><p className="eyebrow text-brand-700">Account</p><h1 className="page-title">Settings</h1><p className="page-subtitle">Manage your profile, security, and workspace preferences.</p></div><div className="grid gap-5 lg:grid-cols-2"><Section icon={UserRound} title="Profile" description="Update the name and department shown across tickets."><form className="space-y-4" onSubmit={saveProfile}><Input label="Full name" value={name} onChange={(event) => setName(event.target.value)} required /><div><label className="mb-1.5 block text-sm font-medium text-slate-700">Department</label><select className="input" value={isCustom ? 'Other' : department} onChange={(event) => setDepartment(event.target.value === 'Other' ? (isCustom ? department : '') : event.target.value)}><option value="">Not specified</option>{departments.map((option) => <option key={option} value={option}>{option}</option>)}<option value="Other">Other</option></select></div>{(isCustom || department === '') && <Input label="Custom department" value={isCustom ? department : ''} maxLength={100} onChange={(event) => setDepartment(event.target.value)} helperText="Optional; up to 100 characters." />}<Button type="submit" isLoading={savingProfile}><Save className="h-4 w-4" /> Save profile</Button></form></Section><NotificationPreferencesSection /><PersonalShortcuts />{normalizedRole === 'ADMIN' && <SlaPolicySettings />}</div></div>;
+  const { user, role } = useAuth();
+  return user?.id ? <SettingsLayout key={`${user.id}:${role}`} /> : null;
 }

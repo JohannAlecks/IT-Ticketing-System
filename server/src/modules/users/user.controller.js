@@ -3,10 +3,10 @@ const userService = require('./user.service');
 const { recordAudit } = require('../audit/audit.service');
 
 const listUsers = asyncHandler(async (req, res) => {
-  const { role, status } = req.query;
-  const users = await userService.listUsers({ role, status });
-  res.status(200).json({ success: true, data: { users } });
+  res.status(200).json({ success: true, data: await userService.listUsers(req.query) });
 });
+const summary = asyncHandler(async (req, res) => res.json({ success: true, data: await userService.userSummary() }));
+const details = asyncHandler(async (req, res) => res.json({ success: true, data: await userService.userDetails(req.params.id) }));
 
 const listAgents = asyncHandler(async (req, res) => {
   const agents = await userService.listAgents();
@@ -42,4 +42,4 @@ const reactivateUser = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { user } });
 });
 
-module.exports = { listUsers, listAgents, getUser, createUser, updateUserRole, setUserActive, deactivateUser, reactivateUser };
+module.exports = { summary, details, listUsers, listAgents, getUser, createUser, updateUserRole, setUserActive, deactivateUser, reactivateUser };

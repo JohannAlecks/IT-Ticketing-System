@@ -131,3 +131,11 @@ html[data-theme='dark'] .archived-banner-meta { border-color: rgb(232 184 102 / 
 html[data-theme='dark'] .archived-banner-icon,
 html[data-theme='dark'] .archived-badge { color: #fcd34d; }
 html[data-theme='dark'] .archived-badge { border-color: rgb(252 211 77 / 40%); background-color: rgb(232 184 102 / 12%); }
+
+.account-dialog::backdrop { background: rgb(8 15 25 / 65%); }
+:where(button, a, select, input):focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }
+html[data-theme='dark'] :where(button, a, select, input):focus-visible { outline-color: #93c5fd; }
+html[data-theme='dark'] .account-dialog { background: #152131; color: #e2e8f0; border-color: #334155; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

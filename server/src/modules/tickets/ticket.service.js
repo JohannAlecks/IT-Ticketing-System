@@ -404,6 +404,7 @@ async function assignTicket(id, assignedToId, user) {
     if (existing.status === 'CLOSED') throw new AppError('This ticket is closed. Reopen it before changing assignment.', 422);
 
     if (assignedToId) {
+      await tx.$queryRaw`SELECT "id" FROM "users" WHERE "id" = ${assignedToId} FOR SHARE`;
       const agent = await tx.user.findUnique({ where: { id: assignedToId } });
       if (!agent || agent.isActive === false || !['AGENT', 'ADMIN'].includes(agent.role)) {
         throw new AppError('Tickets can only be assigned to an Agent or Admin', 422);

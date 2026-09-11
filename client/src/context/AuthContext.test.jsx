@@ -21,6 +21,58 @@ beforeEach(() => {
 });
 
 describe('AuthProvider protected cache cleanup', () => {
+  it('an older role refresh cannot supersede a newer one while cache cancellation is pending', async () => {
+    const client = new QueryClient(); localStorage.setItem('token', 'fixture-token');
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'USER' }); const hook = renderAuth(client);
+    await waitFor(() => expect(hook.result.current.role).toBe('USER'));
+    let release;
+    const cancel = vi.spyOn(client, 'cancelQueries').mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    authApi.me.mockResolvedValueOnce({ id: 'account-a', role: 'ADMIN' });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(authApi.me).toHaveBeenCalledTimes(3));
+    await act(async () => { release(); });
+    expect(hook.result.current.role).toBe('USER');
+    cancel.mockRestore(); hook.unmount(); client.clear();
+  });
+  it('rejects a late login response after logout without storing its token or user', async () => {
+    const client = new QueryClient(); let resolveLogin;
+    authApi.login.mockImplementation(() => new Promise((resolve) => { resolveLogin = resolve; }));
+    const hook = renderAuth(client); let login;
+    act(() => { login = hook.result.current.login({ email: 'fixture@example.test', password: 'test-only' }); });
+    const rejected = expect(login).rejects.toThrow('superseded');
+    act(() => hook.result.current.logout());
+    await act(async () => { resolveLogin({ user: { id: 'old-account', role: 'ADMIN' }, token: 'fixture-token' }); await rejected; });
+    expect(hook.result.current.user).toBeNull(); expect(localStorage.getItem('token')).toBeNull();
+    hook.unmount(); client.clear();
+  });
+  it('does not restore a role refresh after logout during asynchronous cache cleanup', async () => {
+    const client = new QueryClient(); localStorage.setItem('token', 'fixture-token');
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'ADMIN' });
+    const hook = renderAuth(client);
+    await waitFor(() => expect(hook.result.current.role).toBe('ADMIN'));
+    let release;
+    const cancel = vi.spyOn(client, 'cancelQueries').mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'USER' });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    act(() => hook.result.current.logout());
+    await act(async () => { release(); });
+    expect(hook.result.current.user).toBeNull();
+    expect(localStorage.getItem('token')).toBeNull();
+    cancel.mockRestore(); hook.unmount(); client.clear();
+  });
+  it('focus revalidates server role and clears prior Admin data', async () => {
+    const client = new QueryClient(); localStorage.setItem('token', 'fixture-token');
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'ADMIN' }); const hook = renderAuth(client);
+    await waitFor(() => expect(hook.result.current.role).toBe('ADMIN'));
+    client.setQueryData(['protected', 'account-a', 'users', 'ADMIN'], { private: true });
+    authApi.me.mockResolvedValue({ id: 'account-a', role: 'USER' });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(hook.result.current.role).toBe('USER'));
+    expect(client.getQueryData(['protected', 'account-a', 'users', 'ADMIN'])).toBeUndefined(); hook.unmount(); client.clear();
+  });
   it('removes protected data when a forced 401 logout occurs', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     localStorage.setItem('token', 'token-a');

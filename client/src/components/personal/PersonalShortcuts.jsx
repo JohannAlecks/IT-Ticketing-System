@@ -31,12 +31,13 @@ function Management() {
   const [confirmView, setConfirmView] = useState(null);
   const rows = query.data?.shortcuts || [];
   const busy = [create, update, remove, reorder, removeView].some((m) => m.isPending);
-  const options = [...(query.data?.routes || []).map((r) => ({ value: `route:${r.key}`, label: r.label })), ...(views.data?.views || []).filter((v) => v.available).map((v) => ({ value: `view:${v.id}`, label: v.name }))];
+  const destinations = [...(query.data?.routes || []).map((r) => ({ value: `route:${r.key}`, label: r.label })), ...(views.data?.views || []).filter((v) => v.available).map((v) => ({ value: `view:${v.id}`, label: v.name }))];
+  const options = destinations.filter((option) => !rows.some((row) => option.value === (row.targetType === 'ROUTE' ? `route:${row.routeKey}` : `view:${row.savedViewId}`)));
   async function run(fn) { setMessage(null); try { await fn(); setMessage({ text: 'Personal shortcuts saved.' }); } catch (e) { setMessage({ error: true, text: e.response?.data?.message || 'Could not save. Entries are preserved. Refresh and retry.' }); } }
   const move = (index, delta) => run(() => { const ordered = [...rows]; [ordered[index], ordered[index + delta]] = [ordered[index + delta], ordered[index]]; return reorder.mutateAsync({ items: ordered.map(({ id, version }) => ({ id, version })) }); });
   return <section className="card space-y-4 p-5 lg:col-span-2" aria-labelledby="personal-shortcuts-heading">
     <h2 id="personal-shortcuts-heading" className="font-semibold text-slate-900">Personal Shortcuts</h2>
-    <p className="text-sm text-slate-600">{rows.length}/8 shortcuts. Only pages permitted by your current role are offered. Unavailable items remain removable and count toward the limit.</p>
+    <p className="text-sm text-slate-600">{rows.length} of 8 shortcuts. Only pages permitted by your current role are offered. Unavailable items remain removable and count toward the limit.</p>
     {query.isLoading && <p role="status">Loading shortcuts…</p>}
     {(query.isError || views.isError) && <p role="alert">Preferences could not be refreshed. <Button variant="secondary" onClick={() => { query.refetch(); views.refetch(); }}>Retry preferences</Button></p>}
     {query.data && !query.isError && <>
@@ -51,6 +52,7 @@ function Management() {
       {!rows.length && <p className="text-sm text-slate-500">No shortcuts yet. Add a page or a saved ticket view.</p>}
       <ol className="space-y-3">{rows.map((row, index) => <li key={row.id} className="space-y-2 rounded-xl border border-slate-200 p-3">
         <p className="font-medium text-slate-800">{row.label}</p>{!row.available && <p className="text-sm text-slate-500">{row.reason || 'Unavailable for your current role.'}</p>}
+        {row.available && <p className="text-sm text-slate-500">Destination: {destinations.find((option) => option.value === (row.targetType === 'ROUTE' ? `route:${row.routeKey}` : `view:${row.savedViewId}`))?.label || 'Authorized saved view'}</p>}
         <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={busy || index === 0} aria-label={`Move ${row.label} up`} onClick={() => move(index, -1)}>Move Up</Button><Button size="sm" variant="secondary" disabled={busy || index === rows.length - 1} aria-label={`Move ${row.label} down`} onClick={() => move(index, 1)}>Move Down</Button><Button size="sm" variant="secondary" disabled={busy} onClick={() => setEdit({ ...row })}>Rename {row.label}</Button><Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => remove.mutateAsync({ id: row.id, version: row.version }))}>Remove {row.label}</Button></div>
         {edit?.id === row.id && <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); run(async () => { await update.mutateAsync({ id: edit.id, version: edit.version, label: edit.label }); setEdit(null); }); }}><Input id={`shortcut-rename-${row.id}`} label="New shortcut label" maxLength={40} required value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /><Button type="submit" disabled={busy}>Save shortcut label</Button><Button type="button" variant="secondary" onClick={() => setEdit(null)}>Cancel rename</Button></form>}
       </li>)}</ol>
