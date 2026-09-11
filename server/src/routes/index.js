@@ -13,5 +13,7 @@ router.use('/knowledge', require('../modules/knowledge/knowledge.routes'));
 router.use('/notifications', require('../modules/notifications/notification.routes'));
 router.use('/sla', require('../modules/sla/sla.routes'));
 router.use('/satisfaction', require('../modules/satisfaction/satisfaction.routes').router);
+router.use('/saved-views', require('../modules/personal/personal.routes').views);
+router.use('/shortcuts', require('../modules/personal/personal.routes').shortcuts);
 
 module.exports = router;

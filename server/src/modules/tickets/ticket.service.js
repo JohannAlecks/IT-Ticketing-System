@@ -64,10 +64,13 @@ function exposeTicket(ticket, user, now = new Date()) {
   };
 }
 
-async function listTickets(user, query) {
-  const { status, priority, category, assignedToId, search, archive, page, limit, slaState, department } = query;
+async function listTickets(user, query, db = prisma) {
+  const { status, priority, category, assignedToId, search, archive, page, limit, slaState, department, isWorkBlocking, assignmentState, pendingReason, sortField, sortDirection } = query;
   if (slaState && user.role === 'USER') throw new AppError('SLA filters are not available for requesters', 403);
   if (department && user.role !== 'ADMIN') throw new AppError('Department filtering is only available to administrators', 403);
+  if (pendingReason && user.role === 'USER') throw new AppError('Waiting reason filtering requires support access', 403);
+  if (sortField && !['createdAt', 'updatedAt', 'priority', 'status'].includes(sortField)) throw new AppError('Invalid sort field', 422);
+  if (sortDirection && !['asc', 'desc'].includes(sortDirection)) throw new AppError('Invalid sort direction', 422);
   if (slaState && user.role === 'AGENT' && assignedToId && assignedToId !== user.id) throw new AppError('Agents can only filter their assigned SLA work', 403);
   const now = new Date();
 
@@ -79,6 +82,9 @@ async function listTickets(user, query) {
       priority ? { priority } : {},
       category ? { category } : {},
       assignedToId ? { assignedToId } : {},
+      typeof isWorkBlocking === 'boolean' ? { isWorkBlocking } : {},
+      assignmentState ? { assignedToId: assignmentState === 'UNASSIGNED' ? null : { not: null } } : {},
+      pendingReason ? { status: 'PENDING', pendingReason } : {},
       ...(slaState && user.role === 'AGENT' ? [{ assignedToId: user.id }] : []),
       ...(slaState ? [slaFilterWhere(slaState, now)] : []),
       ...(department && user.role === 'ADMIN' ? [{ createdBy: { department } }] : []),
@@ -94,14 +100,14 @@ async function listTickets(user, query) {
   };
 
   const [tickets, total] = await Promise.all([
-    prisma.ticket.findMany({
+    db.ticket.findMany({
       where,
       include: ticketInclude(user),
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ [sortField || 'createdAt']: sortDirection || 'desc' }, { id: 'asc' }],
       skip: (page - 1) * limit,
       take: limit,
     }),
-    prisma.ticket.count({ where }),
+    db.ticket.count({ where }),
   ]);
 
   return {

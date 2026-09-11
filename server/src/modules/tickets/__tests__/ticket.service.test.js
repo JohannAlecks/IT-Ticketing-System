@@ -68,6 +68,27 @@ beforeEach(() => {
 });
 
 describe('getTicketById — visibility', () => {
+  test('shared structured filters preserve ownership and safe stable sorting', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([]); mockPrisma.ticket.count.mockResolvedValue(0);
+    const query = listQuerySchema.parse({ isWorkBlocking: 'false', sortField: 'priority', sortDirection: 'asc' });
+    await ticketService.listTickets(USER, query);
+    const call = mockPrisma.ticket.findMany.mock.calls[0][0];
+    expect(call.where.AND).toEqual(expect.arrayContaining([{ createdById: USER.id }, { archivedAt: null }, { isWorkBlocking: false }]));
+    expect(call.orderBy).toEqual([{ priority: 'asc' }, { id: 'asc' }]);
+  });
+  test('unassigned/waiting filters intersect Agent visibility rather than override it', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([]); mockPrisma.ticket.count.mockResolvedValue(0);
+    await ticketService.listTickets(AGENT_A, listQuerySchema.parse({ assignmentState: 'UNASSIGNED', pendingReason: 'WAITING_FOR_REQUESTER' }));
+    expect(mockPrisma.ticket.findMany.mock.calls[0][0].where.AND).toEqual(expect.arrayContaining([
+      { OR: [{ assignedToId: AGENT_A.id }, { assignedToId: null }] }, { assignedToId: null }, { status: 'PENDING', pendingReason: 'WAITING_FOR_REQUESTER' },
+    ]));
+    await expect(ticketService.listTickets(USER, listQuerySchema.parse({ pendingReason: 'OTHER' }))).rejects.toMatchObject({ statusCode: 403 });
+  });
+  test('query schema rejects oversized search and unsafe sort fields', () => {
+    expect(listQuerySchema.safeParse({ search: 'x'.repeat(201) }).success).toBe(false);
+    expect(listQuerySchema.safeParse({ sortField: '__proto__' }).success).toBe(false);
+    expect(listQuerySchema.safeParse({ isWorkBlocking: 'anything' }).success).toBe(false);
+  });
   test('resolution creates a completion snapshot even without SLA; closing does not create another', async () => {
     const existing = baseTicket({ status: 'IN_PROGRESS', assignedToId: AGENT_A.id, satisfactionCycleNumber: 2 });
     mockPrisma.ticket.findUnique.mockResolvedValue(existing);

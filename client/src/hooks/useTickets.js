@@ -51,7 +51,7 @@ function showTicketMutationError(error, queryClient, userId, ticketId, fallbackM
   toast.error(error.response?.data?.message || fallbackMessage);
 }
 
-export function useTickets(filters = {}) {
+export function useTickets(filters = {}, enabled = true) {
   const { user, role } = useAuth();
   const userId = user?.id;
   const archive = filters.archive === 'archived' ? 'archived' : 'active';
@@ -62,7 +62,7 @@ export function useTickets(filters = {}) {
   return useQuery({
     queryKey: [...listRoot, queryFilters],
     queryFn: ({ signal }) => ticketsApi.list(queryFilters, signal),
-    enabled: !!userId,
+    enabled: !!userId && enabled,
     // Keep the current page visible while filters/pagination change, but only
     // when the account, role, and archive boundary are unchanged. This avoids
     // flashing one account's protected tickets into another account's view.

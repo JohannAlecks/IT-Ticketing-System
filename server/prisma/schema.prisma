@@ -95,6 +95,18 @@ enum PendingReason {
   OTHER
 }
 
+enum SavedViewScope {
+  MY_TICKETS
+  ASSIGNED_TO_ME
+  ALL_AUTHORIZED
+  ARCHIVED
+}
+
+enum ShortcutTargetType {
+  ROUTE
+  SAVED_VIEW
+}
+
 // ─────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────
@@ -133,10 +145,51 @@ model User {
   resolutionRequests        TicketResolutionCycle[]  @relation("ResolutionRequester")
   resolutionAssignments     TicketResolutionCycle[]  @relation("ResolutionAgent")
   satisfactions             TicketSatisfaction[]
+  savedTicketViews          SavedTicketView[]
+  shortcuts                 UserShortcut[]
 
   @@index([email])
   @@index([role])
   @@map("users")
+}
+
+model SavedTicketView {
+  id             String         @id @default(uuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String         @db.VarChar(60)
+  normalizedName String         @db.VarChar(120)
+  scope          SavedViewScope
+  filters        Json
+  version        Int            @default(1)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  shortcuts      UserShortcut[]
+
+  @@unique([userId, normalizedName])
+  @@unique([userId, id])
+  @@map("saved_ticket_views")
+}
+
+model UserShortcut {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String             @db.VarChar(40)
+  targetType  ShortcutTargetType
+  routeKey    String?            @db.VarChar(40)
+  savedViewId String?
+  savedView   SavedTicketView?   @relation(fields: [userId, savedViewId], references: [userId, id], onDelete: Cascade)
+  targetKey   String             @db.VarChar(80)
+  position    Int
+  version     Int                @default(1)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([userId, targetKey])
+  @@unique([userId, position])
+  @@index([userId, savedViewId])
+  @@map("user_shortcuts")
 }
 
 // In-app inbox rows deliberately keep resource references as scalar IDs. This

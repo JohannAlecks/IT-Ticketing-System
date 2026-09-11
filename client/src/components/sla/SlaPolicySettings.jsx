@@ -241,7 +241,7 @@ export default function SlaPolicySettings() {
   }
 
   return (
-    <section className="card p-5 lg:col-span-2" aria-labelledby="sla-policy-settings-heading">
+    <section id="sla-policies" className="card p-5 lg:col-span-2" aria-labelledby="sla-policy-settings-heading">
       <div className="mb-5 flex gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700"><TimerReset className="h-4 w-4" aria-hidden="true" /></div>
         <div>

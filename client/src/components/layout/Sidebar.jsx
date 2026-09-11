@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Ticket, Archive, PlusCircle, Users, Settings, User, LifeBuoy, ClipboardList, ScrollText, X, Sparkles, BarChart3, BookOpen, LibraryBig } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { ShortcutSidebar } from '../personal/PersonalShortcuts';
 
 const linkClass = ({ isActive }) =>
   `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -68,6 +69,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
           <><p className="eyebrow px-3 pb-2 pt-5">Administration</p><NavLink to="/users" className={linkClass}><Users className="h-[18px] w-[18px]" /> Users</NavLink><NavLink to="/audit-log" className={linkClass}><ScrollText className="h-[18px] w-[18px]" /> Audit log</NavLink></>
         )}
 
+        <ShortcutSidebar onClose={onClose} />
         <p className="eyebrow px-3 pb-2 pt-5">Account</p>
 
         <NavLink to="/profile" className={linkClass}>

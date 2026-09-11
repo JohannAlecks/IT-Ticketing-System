@@ -4,6 +4,7 @@ import { Archive, Ticket as TicketIcon } from 'lucide-react';
 import { useTickets } from '../hooks/useTickets';
 import { useAuth } from '../context/AuthContext';
 import TicketFilters from '../components/tickets/TicketFilters';
+import SavedViewsBar from '../components/personal/SavedViewsBar';
 import TicketTable from '../components/tickets/TicketTable';
 import Pagination from '../components/tickets/Pagination';
 import Spinner from '../components/ui/Spinner';
@@ -34,6 +35,7 @@ export default function ArchivedWorkItemsPage() {
       </header>
 
       <TicketFilters filters={filters} onChange={setFilters} />
+      <SavedViewsBar filters={filters} scope="ARCHIVED" />
 
       {isLoading && <Spinner label="Loading archived work items" />}
       {isError && (

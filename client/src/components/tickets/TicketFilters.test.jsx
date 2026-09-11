@@ -13,6 +13,19 @@ function renderFilters(filters = { page: 1, limit: 15, archive: 'active' }, onCh
 }
 
 describe('TicketFilters SLA scope', () => {
+  it('counts a false work-blocking filter and clears it without losing archive mode', () => {
+    authState.role = 'USER';
+    const { onChange } = renderFilters({ page: 3, limit: 15, archive: 'archived', isWorkBlocking: false });
+    expect(screen.getByLabelText('Work blocking')).toHaveValue('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onChange).toHaveBeenCalledWith({ page: 1, limit: 15, archive: 'archived' });
+  });
+  it('switching from unassigned work to Agent SLA removes contradictory assignment state', () => {
+    authState.role = 'AGENT';
+    const { onChange } = renderFilters({ page: 2, archive: 'active', assignmentState: 'UNASSIGNED' });
+    fireEvent.change(screen.getByLabelText('SLA state'), { target: { value: 'BREACHED' } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ assignmentState: undefined, assignedToId: 'agent-1', page: 1 }));
+  });
   it('shows SLA states only to support roles and forces an Agent SLA filter to self', () => {
     authState.role = 'AGENT';
     const { onChange } = renderFilters();

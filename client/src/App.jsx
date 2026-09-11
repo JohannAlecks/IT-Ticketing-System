@@ -8,6 +8,7 @@ import CheckEmailPage from './pages/CheckEmailPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import DashboardPage from './pages/DashboardPage';
 import TicketListPage from './pages/TicketListPage';
+import SavedTicketViewPage from './pages/SavedTicketViewPage';
 import ArchivedWorkItemsPage from './pages/ArchivedWorkItemsPage';
 import MyAssignedTicketsPage from './pages/MyAssignedTicketsPage';
 import TicketDetailPage from './pages/TicketDetailPage';
@@ -39,6 +40,7 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/tickets" element={<TicketListPage />} />
+          <Route path="/saved-views/:id" element={<SavedTicketViewPage />} />
           <Route path="/tickets/new" element={<CreateTicketPage />} />
           <Route path="/tickets/archived" element={<ArchivedWorkItemsPage />} />
           <Route path="/tickets/:id" element={<TicketDetailPage />} />

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useTickets } from '../hooks/useTickets';
 import TicketFilters from '../components/tickets/TicketFilters';
+import SavedViewsBar from '../components/personal/SavedViewsBar';
 import TicketTable from '../components/tickets/TicketTable';
 import Pagination from '../components/tickets/Pagination';
 import Spinner from '../components/ui/Spinner';
@@ -30,6 +31,7 @@ export default function TicketListPage() {
       </div>
 
       <TicketFilters filters={filters} onChange={setFilters} />
+      <SavedViewsBar filters={filters} />
 
       {isLoading && <Spinner />}
       {isError && <ErrorState message="Couldn't load active tickets." onRetry={refetch} retrying={isFetching} />}

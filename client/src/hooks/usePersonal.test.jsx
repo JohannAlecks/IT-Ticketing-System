@@ -1,0 +1,42 @@
+import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beforeEach, afterEach, it, expect, vi } from 'vitest';
+import { usePersonal, usePersonalMutation, useSavedTickets } from './usePersonal';
+import { clearProtectedCache, protectedQueryKeys } from '../query/protectedCache';
+const auth = vi.hoisted(() => ({ user: { id: 'first' }, role: 'USER' }));
+const api = vi.hoisted(() => ({ views: vi.fn(), shortcuts: vi.fn(), execute: vi.fn(), reorder: vi.fn() }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+vi.mock('../api/personal.api', () => ({ personalApi: api }));
+beforeEach(() => { vi.resetAllMocks(); auth.user = { id: 'first' }; auth.role = 'USER'; });
+afterEach(cleanup);
+const wrap = (client) => ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+it.each(['views', 'shortcuts'])('%s are cancelled/removed on logout and never reused across account/role', async (kind) => {
+  const client = new QueryClient(); api[kind].mockResolvedValueOnce({ owner: 'first' }).mockResolvedValueOnce({ owner: 'second' });
+  const hook = renderHook(() => usePersonal(kind), { wrapper: wrap(client) });
+  await waitFor(() => expect(hook.result.current.data?.owner).toBe('first'));
+  expect(api[kind]).toHaveBeenCalledWith(expect.any(AbortSignal));
+  await act(async () => { await clearProtectedCache(client); auth.user = { id: 'second' }; auth.role = 'AGENT'; hook.rerender(); });
+  expect(hook.result.current.data?.owner).not.toBe('first');
+  await waitFor(() => expect(hook.result.current.data?.owner).toBe('second'));
+  expect(client.getQueryCache().findAll({ queryKey: protectedQueryKeys.personal('first', 'USER') })).toHaveLength(0); client.clear();
+});
+it('late reorder completion cannot populate or invalidate a new account cache', async () => {
+  let finish; const client = new QueryClient(); api.reorder.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const hook = renderHook(() => usePersonalMutation('reorder'), { wrapper: wrap(client) });
+  const spy = vi.spyOn(client, 'invalidateQueries'); let pending;
+  act(() => { pending = hook.result.current.mutateAsync({ items: [] }); });
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await act(async () => { await clearProtectedCache(client); auth.user = null; hook.rerender(); });
+  await act(async () => { finish({ shortcuts: [] }); await pending; });
+  expect(spy).not.toHaveBeenCalled(); expect(client.getQueryCache().getAll()).toHaveLength(0); client.clear();
+});
+it('execution placeholder stays inside the same account, role and view; pagination goes to server', async () => {
+  const client = new QueryClient(); api.execute.mockResolvedValue({ tickets: ['view-one'] });
+  const hook = renderHook(({ id, page }) => useSavedTickets(id, page), { initialProps: { id: 'one', page: 1 }, wrapper: wrap(client) });
+  await waitFor(() => expect(hook.result.current.data?.tickets).toEqual(['view-one']));
+  api.execute.mockImplementation(() => new Promise(() => {}));
+  hook.rerender({ id: 'one', page: 2 }); expect(hook.result.current.data?.tickets).toEqual(['view-one']);
+  expect(api.execute).toHaveBeenCalledWith('one', { page: 2, limit: 15 }, expect.any(AbortSignal));
+  hook.rerender({ id: 'two', page: 1 }); expect(hook.result.current.data).toBeUndefined();
+  await act(async () => { await clearProtectedCache(client); }); client.clear();
+});

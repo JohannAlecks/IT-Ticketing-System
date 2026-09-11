@@ -9,10 +9,10 @@ import { SLA_FILTER_STATES } from '../../hooks/useSla';
 const STATUS_OPTIONS = ['OPEN', 'IN_PROGRESS', 'PENDING', 'RESOLVED', 'CLOSED'];
 const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 
-export default function TicketFilters({ filters, onChange }) {
+export default function TicketFilters({ filters, onChange, assignedOnly = false }) {
   const { role, user } = useAuth();
   const { data: agents } = useAgents();
-  const showAgentFilter = role === 'ADMIN' || role === 'AGENT';
+  const showAgentFilter = !assignedOnly && (role === 'ADMIN' || role === 'AGENT');
   const showSlaFilter = (role === 'ADMIN' || role === 'AGENT') && filters.archive !== 'archived';
   const showDepartmentFilter = role === 'ADMIN';
   const agentSlaScoped = role === 'AGENT' && Boolean(filters.slaState);
@@ -20,11 +20,11 @@ export default function TicketFilters({ filters, onChange }) {
   const update = (patch) => onChange({ ...filters, ...patch, page: 1 });
   const updateSlaState = (value) => {
     const patch = { slaState: value || undefined };
-    if (value && role === 'AGENT' && user?.id) patch.assignedToId = user.id;
+    if (value && role === 'AGENT' && user?.id) { patch.assignedToId = user.id; patch.assignmentState = undefined; }
     if (!value && role === 'AGENT' && user?.id && filters.assignedToId === user.id) patch.assignedToId = undefined;
     update(patch);
   };
-  const activeCount = Object.keys(filters).filter((key) => !['page', 'limit', 'archive'].includes(key) && filters[key]).length;
+  const activeCount = Object.keys(filters).filter((key) => !['page', 'limit', 'archive'].includes(key) && (filters[key] || (key === 'isWorkBlocking' && filters[key] === false))).length;
   const clearFilters = () => onChange({
     page: 1,
     limit: filters.limit || 15,
@@ -41,6 +41,7 @@ export default function TicketFilters({ filters, onChange }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <input
             id="ticket-search"
+            maxLength={200}
             className="input pl-9"
             placeholder="Search title or description..."
             value={filters.search || ''}
@@ -53,7 +54,7 @@ export default function TicketFilters({ filters, onChange }) {
         <Select
           label="Status"
           value={filters.status || ''}
-          onChange={(e) => update({ status: e.target.value || undefined })}
+          onChange={(e) => update({ status: e.target.value || undefined, ...(e.target.value !== 'PENDING' ? { pendingReason: undefined } : {}) })}
         >
           <option value="">All statuses</option>
           {STATUS_OPTIONS.map((s) => (
@@ -94,7 +95,7 @@ export default function TicketFilters({ filters, onChange }) {
             label="Assigned agent"
             value={agentSlaScoped ? user?.id || '' : (filters.assignedToId || '')}
             disabled={agentSlaScoped}
-            onChange={(e) => update({ assignedToId: e.target.value || undefined })}
+            onChange={(e) => update({ assignedToId: e.target.value || undefined, ...(e.target.value ? { assignmentState: undefined } : {}) })}
           >
             <option value="">All agents</option>
             {agents?.map((a) => (
@@ -133,6 +134,23 @@ export default function TicketFilters({ filters, onChange }) {
           />
         </div>
       )}
+      <div className="flex flex-wrap gap-3 pt-3">
+        <Select label="Work blocking" value={filters.isWorkBlocking === undefined ? '' : String(filters.isWorkBlocking)} onChange={(e) => update({ isWorkBlocking: e.target.value === '' ? undefined : e.target.value === 'true' })}>
+          <option value="">All impact levels</option><option value="true">Work blocking</option><option value="false">Not work blocking</option>
+        </Select>
+        {role !== 'USER' && <>
+          {!assignedOnly && <Select label="Assignment state" value={filters.assignmentState || ''} onChange={(e) => update({ assignmentState: e.target.value || undefined, ...(e.target.value === 'UNASSIGNED' ? { assignedToId: undefined, ...(role === 'AGENT' ? { slaState: undefined } : {}) } : {}) })}>
+            <option value="">Any assignment</option><option value="ASSIGNED">Assigned</option><option value="UNASSIGNED">Unassigned</option>
+          </Select>}
+          <Select label="Waiting reason" value={filters.pendingReason || ''} onChange={(e) => update({ pendingReason: e.target.value || undefined, ...(e.target.value ? { status: 'PENDING' } : {}) })}>
+            <option value="">Any reason</option><option value="WAITING_FOR_REQUESTER">Waiting for requester</option><option value="OTHER">Other</option>
+          </Select>
+        </>}
+        <Select label="Sort by" value={filters.sortField || 'createdAt'} onChange={(e) => update({ sortField: e.target.value })}>
+          <option value="createdAt">Created</option><option value="updatedAt">Updated</option><option value="priority">Technical priority</option><option value="status">Status</option>
+        </Select>
+        <Select label="Sort direction" value={filters.sortDirection || 'desc'} onChange={(e) => update({ sortDirection: e.target.value })}><option value="desc">Descending</option><option value="asc">Ascending</option></Select>
+      </div>
     </div>
   );
 }

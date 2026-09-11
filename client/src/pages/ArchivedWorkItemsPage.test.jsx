@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import ArchivedWorkItemsPage from './ArchivedWorkItemsPage';
+vi.mock('../components/personal/SavedViewsBar', () => ({ default: () => null }));
 
 const hooks = vi.hoisted(() => ({
   filters: null,
