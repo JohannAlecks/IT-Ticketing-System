@@ -35,6 +35,7 @@ export const protectedQueryKeys = {
   satisfaction: (userId, role) => scopedKey(userId, role, ['satisfaction']),
   personal: (userId, role) => scopedKey(userId, role, ['personal']),
   search: (userId, role) => scopedKey(userId, role, ['search']),
+  watching: (userId, role, ticketId) => scopedKey(userId, role, ['watching', ticketId]),
   users: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'users'],
   agents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'agents'],
   auditEvents: (userId) => [PROTECTED_QUERY_SCOPE, userId, 'audit-events'],

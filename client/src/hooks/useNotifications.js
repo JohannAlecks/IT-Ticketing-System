@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { protectedMutationKeys, protectedQueryKeys } from '../query/protectedCache';
 
 export const NOTIFICATION_TYPES = [
+  'TICKET_WATCHED_UPDATE',
   'TICKET_SATISFACTION_RECEIVED',
   'TICKET_ASSIGNED', 'TICKET_UNASSIGNED', 'TICKET_STATUS_CHANGED',
   'TICKET_PUBLIC_REPLY', 'TICKET_WORK_BLOCKING', 'KNOWLEDGE_SUBMITTED',
@@ -14,6 +15,7 @@ export const NOTIFICATION_TYPES = [
 ];
 
 const ticketTypes = new Set([
+  'TICKET_WATCHED_UPDATE',
   'TICKET_SATISFACTION_RECEIVED',
   'TICKET_ASSIGNED', 'TICKET_UNASSIGNED', 'TICKET_STATUS_CHANGED', 'TICKET_PUBLIC_REPLY', 'TICKET_WORK_BLOCKING',
   'SLA_FIRST_RESPONSE_DUE_SOON', 'SLA_FIRST_RESPONSE_BREACHED', 'SLA_RESOLUTION_DUE_SOON', 'SLA_RESOLUTION_BREACHED',
@@ -21,6 +23,7 @@ const ticketTypes = new Set([
 const knowledgeTypes = new Set(['KNOWLEDGE_SUBMITTED', 'KNOWLEDGE_PUBLISHED', 'KNOWLEDGE_RETURNED']);
 
 export const NOTIFICATION_PREFERENCE_KEYS = [
+  'ticketWatchedUpdates',
   'ticketAssigned',
   'ticketUnassigned',
   'ticketStatusChanged',

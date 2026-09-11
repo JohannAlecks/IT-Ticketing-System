@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TicketDetailPage from './TicketDetailPage';
+vi.mock('../components/tickets/TicketWatching', () => ({ default: () => null }));
 
 const hooks = vi.hoisted(() => ({
   auth: { role: 'ADMIN', user: { id: 'admin-1', name: 'Ada Admin' } },

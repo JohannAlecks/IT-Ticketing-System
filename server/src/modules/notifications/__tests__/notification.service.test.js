@@ -111,7 +111,7 @@ test('writer never filters the mandatory account reactivation notification', asy
 
 test('GET preferences returns role-visible defaults without creating a row', async () => {
   await expect(service.getNotificationPreferences({ ...OWNER, role: 'USER' })).resolves.toEqual({
-    preferences: { ticketStatusChanged: true, ticketPublicReply: true, accountReactivated: true },
+    preferences: { ticketStatusChanged: true, ticketPublicReply: true, ticketWatchedUpdates: true, accountReactivated: true },
     mandatory: ['accountReactivated'],
   });
   expect(mockPrisma.notificationPreference.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: OWNER.id } }));
@@ -119,8 +119,8 @@ test('GET preferences returns role-visible defaults without creating a row', asy
 });
 
 test('role visibility exposes only supported optional fields while administrators receive all supported fields', () => {
-  expect(service.visiblePreferenceFields('USER')).toEqual(['ticketStatusChanged', 'ticketPublicReply']);
-  expect(service.visiblePreferenceFields('AGENT')).toEqual(['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon']);
+  expect(service.visiblePreferenceFields('USER')).toEqual(['ticketStatusChanged', 'ticketPublicReply', 'ticketWatchedUpdates']);
+  expect(service.visiblePreferenceFields('AGENT')).toEqual(['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon', 'ticketWatchedUpdates']);
   expect(service.visiblePreferenceFields('ADMIN')).toEqual(service.PREFERENCE_FIELDS);
 });
 
@@ -128,7 +128,7 @@ test('PATCH preferences accepts only current-role fields and audits exactly chan
   const user = { ...OWNER, role: 'AGENT' };
   mockPrisma.notificationPreference.upsert.mockResolvedValue({ ticketAssigned: false, ticketUnassigned: true, ticketStatusChanged: true, ticketPublicReply: true, knowledgePublished: true, knowledgeReturned: true, slaDueSoon: true });
   await expect(service.updateNotificationPreferences(user, { ticketAssigned: false }, 'request-1')).resolves.toEqual({
-    preferences: { ticketAssigned: false, ticketUnassigned: true, ticketStatusChanged: true, ticketPublicReply: true, knowledgePublished: true, knowledgeReturned: true, slaDueSoon: true, accountReactivated: true, slaBreached: true },
+    preferences: { ticketAssigned: false, ticketUnassigned: true, ticketStatusChanged: true, ticketPublicReply: true, knowledgePublished: true, knowledgeReturned: true, slaDueSoon: true, ticketWatchedUpdates: true, accountReactivated: true, slaBreached: true },
     mandatory: ['accountReactivated', 'slaBreached'],
   });
   expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: OWNER.id }, create: { userId: OWNER.id, ticketAssigned: false }, update: { ticketAssigned: false } }));

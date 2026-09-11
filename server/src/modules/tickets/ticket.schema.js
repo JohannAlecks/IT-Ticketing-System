@@ -44,6 +44,7 @@ const listQuerySchema = z.object({
   assignedToId: z.string().uuid().optional(),
   search: z.string().max(200).optional(),
   isWorkBlocking: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  watchedByMe: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   assignmentState: z.enum(['ASSIGNED', 'UNASSIGNED']).optional(),
   pendingReason: z.enum(['WAITING_FOR_REQUESTER', 'OTHER']).optional(),
   sortField: z.enum(['createdAt', 'updatedAt', 'priority', 'status']).optional(),

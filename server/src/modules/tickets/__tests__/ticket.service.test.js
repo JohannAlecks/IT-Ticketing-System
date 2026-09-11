@@ -26,6 +26,7 @@ jest.mock('../../../config/prisma', () => ({
   },
   notification: { createMany: jest.fn() },
   notificationPreference: { findMany: jest.fn() },
+  ticketWatcher: { findMany: jest.fn() },
   ticketHistory: {
     create: jest.fn(),
     createMany: jest.fn(),
@@ -64,10 +65,22 @@ beforeEach(() => {
   mockPrisma.ticket.deleteMany.mockResolvedValue({ count: 1 });
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
+  mockPrisma.ticketWatcher.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 
 describe('getTicketById — visibility', () => {
+  test('watched filtering binds self and intersects authorization, archive, search and priority', async () => {
+    mockPrisma.ticket.findMany.mockResolvedValue([]); mockPrisma.ticket.count.mockResolvedValue(0);
+    await ticketService.listTickets(AGENT_A, listQuerySchema.parse({ watchedByMe: 'true', archive: 'archived', priority: 'HIGH', search: 'vpn' }));
+    const call = mockPrisma.ticket.findMany.mock.calls[0][0];
+    expect(call.where.AND).toEqual(expect.arrayContaining([
+      { watchers: { some: { userId: AGENT_A.id } } }, { archivedAt: { not: null } }, { priority: 'HIGH' },
+      { OR: [{ assignedToId: AGENT_A.id }, { assignedToId: null }] },
+      { OR: [{ title: { contains: 'vpn', mode: 'insensitive' } }, { description: { contains: 'vpn', mode: 'insensitive' } }] },
+    ]));
+    expect(call.include).not.toHaveProperty('watchers');
+  });
   test('shared structured filters preserve ownership and safe stable sorting', async () => {
     mockPrisma.ticket.findMany.mockResolvedValue([]); mockPrisma.ticket.count.mockResolvedValue(0);
     const query = listQuerySchema.parse({ isWorkBlocking: 'false', sortField: 'priority', sortDirection: 'asc' });

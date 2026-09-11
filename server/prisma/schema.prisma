@@ -74,6 +74,7 @@ enum KnowledgeVisibility {
 }
 
 enum NotificationType {
+  TICKET_WATCHED_UPDATE
   TICKET_SATISFACTION_RECEIVED
   TICKET_ASSIGNED
   TICKET_UNASSIGNED
@@ -147,10 +148,24 @@ model User {
   satisfactions             TicketSatisfaction[]
   savedTicketViews          SavedTicketView[]
   shortcuts                 UserShortcut[]
+  ticketWatches             TicketWatcher[]
 
   @@index([email])
   @@index([role])
   @@map("users")
+}
+
+model TicketWatcher {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([ticketId, userId])
+  @@index([userId, createdAt])
+  @@map("ticket_watchers")
 }
 
 model SavedTicketView {
@@ -219,20 +234,21 @@ model Notification {
 // optional notification remains enabled, so introducing preferences never
 // changes the delivery behavior for existing accounts.
 model NotificationPreference {
-  id                  String   @id @default(uuid())
-  userId              String   @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ticketAssigned      Boolean  @default(true)
-  ticketUnassigned    Boolean  @default(true)
-  ticketStatusChanged Boolean  @default(true)
-  ticketPublicReply   Boolean  @default(true)
-  ticketWorkBlocking  Boolean  @default(true)
-  knowledgeSubmitted  Boolean  @default(true)
-  knowledgePublished  Boolean  @default(true)
-  knowledgeReturned   Boolean  @default(true)
-  slaDueSoon          Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticketAssigned       Boolean  @default(true)
+  ticketUnassigned     Boolean  @default(true)
+  ticketStatusChanged  Boolean  @default(true)
+  ticketPublicReply    Boolean  @default(true)
+  ticketWatchedUpdates Boolean  @default(true)
+  ticketWorkBlocking   Boolean  @default(true)
+  knowledgeSubmitted   Boolean  @default(true)
+  knowledgePublished   Boolean  @default(true)
+  knowledgeReturned    Boolean  @default(true)
+  slaDueSoon           Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@map("notification_preferences")
 }
@@ -271,14 +287,15 @@ model AuditEvent {
 }
 
 model Ticket {
-  id                String         @id @default(uuid())
+  watchers          TicketWatcher[]
+  id                String          @id @default(uuid())
   title             String
-  description       String         @db.Text
-  status            TicketStatus   @default(OPEN)
-  priority          TicketPriority @default(MEDIUM)
-  category          TicketCategory @default(OTHERS)
-  isWorkBlocking    Boolean        @default(false)
-  impactDescription String?        @db.VarChar(500)
+  description       String          @db.Text
+  status            TicketStatus    @default(OPEN)
+  priority          TicketPriority  @default(MEDIUM)
+  category          TicketCategory  @default(OTHERS)
+  isWorkBlocking    Boolean         @default(false)
+  impactDescription String?         @db.VarChar(500)
 
   createdById String
   createdBy   User   @relation("TicketCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)

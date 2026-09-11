@@ -1,14 +1,16 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { PREFERENCE_FIELDS } = require('./notification.schema');
+const { assertTicketVisible } = require('../tickets/ticket.access');
 
 const MANDATORY_PREFERENCE_FIELDS = ['accountReactivated'];
 const ROLE_VISIBLE_PREFERENCE_FIELDS = {
-  USER: ['ticketStatusChanged', 'ticketPublicReply'],
-  AGENT: ['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon'],
+  USER: ['ticketStatusChanged', 'ticketPublicReply', 'ticketWatchedUpdates'],
+  AGENT: ['ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon', 'ticketWatchedUpdates'],
   ADMIN: PREFERENCE_FIELDS,
 };
 const TYPE_PREFERENCE_FIELD = {
+  TICKET_WATCHED_UPDATE: 'ticketWatchedUpdates',
   TICKET_ASSIGNED: 'ticketAssigned',
   TICKET_UNASSIGNED: 'ticketUnassigned',
   TICKET_STATUS_CHANGED: 'ticketStatusChanged',
@@ -29,7 +31,7 @@ const NOTIFICATION_SELECT = {
 
 // This is intentionally the only writer. Callers pass server-selected IDs and
 // hardcoded copy; the client never supplies recipient IDs or notification text.
-async function writeNotifications(tx, { actorId = null, entries }) {
+async function writeNotifications(tx, { actorId = null, entries, returnRecipientIds = false }) {
   const unique = new Map();
   for (const entry of entries || []) {
     if (!entry || !entry.recipientId || entry.recipientId === actorId) continue;
@@ -38,11 +40,12 @@ async function writeNotifications(tx, { actorId = null, entries }) {
     unique.set(`${entry.recipientId}:${entry.dedupeKey || `${entry.type}:${entry.ticketId || ''}`}`, entry);
   }
   const candidates = [...unique.values()];
+  const watcherTicketIds = [...new Set(candidates.filter((entry) => entry.type === 'TICKET_WATCHED_UPDATE').map((entry) => entry.ticketId))];
   if (!candidates.length) return { count: 0 };
 
   const activeUsers = await tx.user.findMany({
     where: { id: { in: candidates.map((entry) => entry.recipientId) }, isActive: true },
-    select: { id: true, role: true },
+    select: { id: true, role: true, ...(watcherTicketIds.length ? { emailVerified: true } : {}) },
   });
   const activeUsersById = new Map(activeUsers.map((user) => [user.id, user]));
   const activeIds = new Set(activeUsersById.keys());
@@ -55,9 +58,18 @@ async function writeNotifications(tx, { actorId = null, entries }) {
     select: { userId: true, ...PREFERENCE_SELECT },
   });
   const preferencesByUserId = new Map(preferences.map((preference) => [preference.userId, preference]));
+  // Recheck access at the only writer against the latest batched roles.
+  const watcherTickets = watcherTicketIds.length ? await tx.ticket.findMany({ where: { id: { in: watcherTicketIds }, archivedAt: null }, select: { id: true, createdById: true, assignedToId: true } }) : [];
+  const ticketsById = new Map(watcherTickets.map((ticket) => [ticket.id, ticket]));
   const data = candidates.filter((entry) => {
     const recipient = activeUsersById.get(entry.recipientId);
     if (!recipient) return false;
+    if (entry.type === 'TICKET_WATCHED_UPDATE') {
+      const ticket = ticketsById.get(entry.ticketId);
+      if (!ticket || !recipient.emailVerified || !['USER', 'AGENT', 'ADMIN'].includes(recipient.role)) return false;
+      if (entry.watcherStaffOnly && recipient.role === 'USER') return false;
+      try { assertTicketVisible(ticket, recipient); } catch { return false; }
+    }
     if (entry.type === 'TICKET_SATISFACTION_RECEIVED' && recipient.role !== 'AGENT') return false;
     if (entry.type.startsWith('SLA_') && !['AGENT', 'ADMIN'].includes(recipient.role)) return false;
     const preferenceField = TYPE_PREFERENCE_FIELD[entry.type];
@@ -73,7 +85,9 @@ async function writeNotifications(tx, { actorId = null, entries }) {
     dedupeKey: entry.dedupeKey || null,
   }));
   if (!data.length) return { count: 0 };
-  return tx.notification.createMany({ data, skipDuplicates: true });
+  const result = await tx.notification.createMany({ data, skipDuplicates: true });
+  // Opt-in evidence suppresses only domain alerts surviving preference checks.
+  return returnRecipientIds ? { ...result, recipientIds: [...new Set(data.map((row) => row.recipientId))] } : result;
 }
 
 function ticketReference(ticketId) {

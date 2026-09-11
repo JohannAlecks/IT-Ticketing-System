@@ -5,7 +5,7 @@ const { ROUTES } = require('./personal.policy');
 // Search stays transient: free text can contain private content or credentials.
 const filtersSchema = listQuerySchema.pick({ status: true, priority: true, category: true, assignedToId: true,
   slaState: true, department: true, assignmentState: true, pendingReason: true, sortField: true, sortDirection: true,
-}).extend({ isWorkBlocking: z.boolean().optional() }).strict();
+}).extend({ isWorkBlocking: z.boolean().optional(), watchedByMe: z.boolean().optional() }).strict();
 const name = z.string().trim().min(1).max(60).refine((s) => !/[\u0000-\u001f\u007f]/.test(s) && s.normalize('NFKC').toLowerCase().length <= 120, 'Invalid normalized name or control characters');
 const label = z.string().trim().min(1).max(40).refine((s) => !/[\u0000-\u001f\u007f]/.test(s), 'Control characters are not allowed');
 const version = z.number().int().positive().max(2147483647);

@@ -15,6 +15,7 @@ import HistoryTimeline from '../components/tickets/HistoryTimeline';
 import TicketAttachments from '../components/tickets/TicketAttachments';
 import SlaDetails from '../components/sla/SlaDetails';
 import TicketSatisfaction from '../components/satisfaction/TicketSatisfaction';
+import TicketWatching from '../components/tickets/TicketWatching';
 import { canArchiveTicket } from '../components/tickets/ticketArchivePolicy';
 import { formatDateTime, shortId } from '../utils/format';
 import { categoryLabel } from '../constants/ticketCategories';
@@ -139,6 +140,7 @@ export default function TicketDetailPage() {
         </section>
       )}
 
+      <TicketWatching ticket={ticket} />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main column */}
         <div className="space-y-6 lg:col-span-2">

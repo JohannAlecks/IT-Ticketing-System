@@ -30,7 +30,7 @@ vi.mock('react-hot-toast', () => ({ default: { success: vi.fn(), error: vi.fn() 
 vi.mock('../hooks/useNotifications', () => ({
   NOTIFICATION_PREFERENCE_KEYS: [
     'ticketAssigned', 'ticketUnassigned', 'ticketStatusChanged', 'ticketPublicReply', 'ticketWorkBlocking',
-    'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon',
+    'knowledgeSubmitted', 'knowledgePublished', 'knowledgeReturned', 'slaDueSoon', 'ticketWatchedUpdates',
   ],
   useNotificationPreferences: () => preferenceQuery,
   useUpdateNotificationPreferences: () => preferenceMutation,
@@ -40,6 +40,7 @@ const userPreferences = {
   preferences: {
     ticketStatusChanged: false,
     ticketPublicReply: true,
+    ticketWatchedUpdates: true,
     accountReactivated: true,
   },
   mandatory: ['accountReactivated'],
@@ -71,6 +72,16 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('Notifications settings', () => {
+  it('saves watched updates through existing preferences and explains internal-note exclusion', async () => {
+    preferenceMutation.mutateAsync.mockResolvedValue({ ...userPreferences, preferences: { ...userPreferences.preferences, ticketWatchedUpdates: false } });
+    renderSettings();
+    const control = await screen.findByRole('checkbox', { name: 'Updates to tickets I watch' });
+    expect(control).toBeChecked();
+    expect(screen.getByText(/Internal notes are never included/i)).toBeInTheDocument();
+    fireEvent.click(control);
+    fireEvent.click(screen.getByRole('button', { name: /Save notification preferences/i }));
+    await waitFor(() => expect(preferenceMutation.mutateAsync).toHaveBeenCalledWith({ ticketWatchedUpdates: false }));
+  });
   it('renders only server-visible role controls, omits empty groups, and keeps the mandatory control on', async () => {
     renderSettings();
 

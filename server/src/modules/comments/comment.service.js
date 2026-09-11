@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
-const { writeNotifications, ticketReference, eventEntry } = require('../notifications/notification.service');
+const { ticketReference, eventEntry } = require('../notifications/notification.service');
+const { notifyTicketWatchers } = require('../watchers/watcher.service');
 const { assertTicketVisible, assertTicketIsActive, lockActiveTicketForMutation } = require('../tickets/ticket.access');
 
 async function listComments(ticketId, user) {
@@ -95,19 +96,17 @@ async function addComment(ticketId, data, user) {
       // public-reply notice to a stale assignee.
       const notificationTicket = await tx.ticket.findUnique({ where: { id: ticketId }, select: { createdById: true, assignedToId: true } });
       const recipientId = user.role === 'USER' ? notificationTicket?.assignedToId : notificationTicket?.createdById;
-      if (recipientId) {
-        await writeNotifications(tx, {
-          actorId: user.id,
-          entries: [eventEntry({
-            recipientId,
-            type: 'TICKET_PUBLIC_REPLY',
-            ticketId,
-            title: 'New ticket reply',
-            message: `There is a new reply on ticket ${ticketReference(ticketId)}.`,
-            eventId: comment.id,
-          })],
-        });
-      }
+      await notifyTicketWatchers(tx, {
+        ticket: currentTicket, actorId: user.id, kind: user.role === 'USER' ? 'PUBLIC_REQUESTER_REPLY' : 'PUBLIC_STAFF_REPLY', eventId: comment.id,
+        domainEntries: recipientId ? [eventEntry({
+          recipientId,
+          type: 'TICKET_PUBLIC_REPLY',
+          ticketId,
+          title: 'New ticket reply',
+          message: `There is a new reply on ticket ${ticketReference(ticketId)}.`,
+          eventId: comment.id,
+        })] : [],
+      });
     }
 
     return comment;

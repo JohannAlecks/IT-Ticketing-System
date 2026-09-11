@@ -23,6 +23,7 @@ const NOTIFICATION_GROUPS = [
   {
     title: 'Ticket activity',
     options: [
+      { key: 'ticketWatchedUpdates', label: 'Updates to tickets I watch', description: 'Future public updates to authorized tickets you follow. Internal notes are never included.' },
       { key: 'ticketAssigned', label: 'Ticket assigned', description: 'A ticket is assigned to you.' },
       { key: 'ticketUnassigned', label: 'Ticket unassigned', description: 'A ticket is unassigned from you.' },
       { key: 'ticketStatusChanged', label: 'Ticket status changed', description: 'A ticket you are involved with changes status.' },

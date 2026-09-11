@@ -1,4 +1,6 @@
 const prisma = require('../../config/prisma');
+const { randomUUID } = require('crypto');
+const { notifyTicketWatchers } = require('../watchers/watcher.service');
 const { recordResolution } = require('../satisfaction/satisfaction.service');
 const AppError = require('../../utils/AppError');
 const fs = require('fs');
@@ -77,6 +79,7 @@ async function listTickets(user, query, db = prisma) {
   const where = {
     AND: [
       buildTicketVisibilityFilter(user),
+      query.watchedByMe === true ? { watchers: { some: { userId: user.id } } } : {},
       archive === 'archived' ? { archivedAt: { not: null } } : { archivedAt: null },
       status ? { status } : {},
       priority ? { priority } : {},
@@ -371,12 +374,14 @@ async function updateTicket(id, data, user) {
     if (data.status === 'RESOLVED' && existing.status !== 'RESOLVED') await recordResolution(tx, existing, user, now);
 
     const updated = await tx.ticket.findUnique({ where: { id }, include: ticketInclude(user) });
+    for (const entry of historyEntries) entry.id = randomUUID();
     if (historyEntries.length) await tx.ticketHistory.createMany({ data: historyEntries });
     if (auditEvents.length) await Promise.all(auditEvents.map((event) => tx.auditEvent.create({ data: event })));
-    if (data.status && data.status !== existing.status) {
-      await writeNotifications(tx, {
-        actorId: user.id,
-        entries: [existing.createdById, existing.assignedToId].filter(Boolean).map((recipientId) => eventEntry({
+    const watcherEvent = historyEntries.find((entry) => ['STATUS_CHANGED', 'PRIORITY_CHANGED'].includes(entry.action));
+    if (watcherEvent) {
+      await notifyTicketWatchers(tx, {
+        ticket: updated, actorId: user.id, kind: 'STATUS_PRIORITY', eventId: watcherEvent.id,
+        domainEntries: (data.status && data.status !== existing.status ? [existing.createdById, existing.assignedToId] : []).filter(Boolean).map((recipientId) => eventEntry({
           recipientId,
           type: 'TICKET_STATUS_CHANGED',
           ticketId: id,
@@ -423,12 +428,13 @@ async function assignTicket(id, assignedToId, user) {
     else if (assignedToId && existing.assignedToId) description = `${user.name} reassigned this ticket to ${updated.assignedTo.name}`;
     else if (assignedToId) description = `${user.name} assigned this ticket to ${updated.assignedTo.name}`;
     else description = `${user.name} unassigned this ticket`;
+    const assignmentEventId = randomUUID();
     await tx.ticketHistory.create({
-      data: { ticketId: id, userId: user.id, action: assignedToId ? 'ASSIGNED' : 'UNASSIGNED', description, metadata: { from: existing.assignedToId, to: assignedToId } },
+      data: { id: assignmentEventId, ticketId: id, userId: user.id, action: assignedToId ? 'ASSIGNED' : 'UNASSIGNED', description, metadata: { from: existing.assignedToId, to: assignedToId } },
     });
-    await writeNotifications(tx, {
-      actorId: user.id,
-      entries: [
+    await notifyTicketWatchers(tx, {
+      ticket: updated, actorId: user.id, kind: 'ASSIGNMENT', eventId: assignmentEventId,
+      domainEntries: [
         ...(assignedToId ? [eventEntry({ recipientId: assignedToId, type: 'TICKET_ASSIGNED', ticketId: id, title: 'Ticket assigned', message: `Ticket ${ticketReference(id)} was assigned to you.`, eventId: `${id}:${assignedToId}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}` })] : []),
         ...(existing.assignedToId ? [eventEntry({ recipientId: existing.assignedToId, type: 'TICKET_UNASSIGNED', ticketId: id, title: 'Ticket unassigned', message: `You are no longer assigned to ticket ${ticketReference(id)}.`, eventId: `${id}:${existing.assignedToId}:${updated.updatedAt ? new Date(updated.updatedAt).toISOString() : ''}` })] : []),
       ],

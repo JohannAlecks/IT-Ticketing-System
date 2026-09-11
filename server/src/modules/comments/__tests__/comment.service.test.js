@@ -3,6 +3,7 @@ jest.mock('../../../config/prisma', () => ({
   user: { findMany: jest.fn() },
   notification: { createMany: jest.fn() },
   notificationPreference: { findMany: jest.fn() },
+  ticketWatcher: { findMany: jest.fn() },
   comment: { findMany: jest.fn(), create: jest.fn() },
   ticketHistory: { create: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
@@ -24,6 +25,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
+  mockPrisma.ticketWatcher.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
   mockPrisma.ticket.updateMany.mockResolvedValue({ count: 1 });
 });
@@ -118,5 +120,6 @@ describe('comment notification events', () => {
     mockPrisma.comment.create.mockResolvedValue({ id: 'comment-2', isInternal: true });
     await commentService.addComment('ticket-1', { content: 'secret internal note', isInternal: true }, AGENT_A);
     expect(mockPrisma.notification.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.ticketWatcher.findMany).not.toHaveBeenCalled();
   });
 });

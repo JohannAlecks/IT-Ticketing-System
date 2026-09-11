@@ -13,6 +13,13 @@ function renderFilters(filters = { page: 1, limit: 15, archive: 'active' }, onCh
 }
 
 describe('TicketFilters SLA scope', () => {
+  it('combines watched-by-me with existing filters, resets pagination, and saves only the Boolean', async () => {
+    const { onChange } = renderFilters({ page: 3, archive: 'archived', priority: 'HIGH' });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Watched by me' }));
+    expect(onChange).toHaveBeenCalledWith({ page: 1, archive: 'archived', priority: 'HIGH', watchedByMe: true });
+    const { savedFilters } = await import('../personal/savedFilters');
+    expect(savedFilters({ watchedByMe: true, priority: 'HIGH', search: 'private', page: 3 }, 'MY_TICKETS')).toEqual({ watchedByMe: true, priority: 'HIGH' });
+  });
   it('counts a false work-blocking filter and clears it without losing archive mode', () => {
     authState.role = 'USER';
     const { onChange } = renderFilters({ page: 3, limit: 15, archive: 'archived', isWorkBlocking: false });

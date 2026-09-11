@@ -7,7 +7,7 @@ test('self summary endpoints authenticate and nested feedback mounts below ticke
   expect(router.stack.filter((l) => l.route).map((l) => l.route.path)).toEqual(['/me', '/summary']);
   const tickets = require('../../tickets/ticket.routes');
   expect(tickets.stack[0].handle).toBe(authenticate);
-  expect(tickets.stack[1].handle).toBe(ticketRouter);
+  expect(tickets.stack.findIndex((layer) => layer.handle === ticketRouter)).toBeGreaterThan(0);
   const next = jest.fn(); validateUuid('ticketId')({ params: { ticketId: 'malformed' } }, {}, next);
   expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 422 }));
 });

@@ -5,6 +5,7 @@ jest.mock('../../../config/prisma', () => ({
   auditEvent: { create: jest.fn() }, user: { findMany: jest.fn(), findUnique: jest.fn() },
   ticketResolutionCycle: { create: jest.fn() },
   notification: { createMany: jest.fn() }, notificationPreference: { findMany: jest.fn() },
+  ticketWatcher: { findMany: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(require('../../../config/prisma'))),
 }));
 const db = require('../../../config/prisma');
@@ -36,6 +37,7 @@ beforeEach(() => {
   db.comment.create.mockResolvedValue({ id: 'comment' });
   db.user.findMany.mockResolvedValue([]);
   db.notificationPreference.findMany.mockResolvedValue([]);
+  db.ticketWatcher.findMany.mockResolvedValue([]);
 });
 afterEach(() => jest.useRealTimers());
 

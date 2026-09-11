@@ -1,0 +1,40 @@
+import { renderHook, waitFor, act, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beforeEach, afterEach, it, expect, vi } from 'vitest';
+import { useWatching, useSetWatching } from './useWatching';
+import { clearProtectedCache, protectedQueryKeys } from '../query/protectedCache';
+const auth = vi.hoisted(() => ({ user: { id: 'first' }, role: 'USER' }));
+const api = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn() }));
+vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
+vi.mock('../api/watchers.api', () => ({ watchersApi: api }));
+beforeEach(() => { vi.resetAllMocks(); auth.user = { id: 'first' }; auth.role = 'USER'; });
+afterEach(cleanup);
+const wrap = (client) => ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+it('query keys isolate ticket/account/role, and logout aborts and clears protected data', async () => {
+  const client = new QueryClient(); api.get.mockResolvedValueOnce({ isWatching: true }).mockImplementation(() => new Promise(() => {}));
+  const hook = renderHook(({ id }) => useWatching(id), { initialProps: { id: 'one' }, wrapper: wrap(client) });
+  await waitFor(() => expect(hook.result.current.data?.isWatching).toBe(true));
+  expect(api.get).toHaveBeenCalledWith('one', expect.any(AbortSignal));
+  hook.rerender({ id: 'two' }); expect(hook.result.current.data).toBeUndefined();
+  const signal = api.get.mock.calls.at(-1)[1];
+  await act(async () => { await clearProtectedCache(client); auth.user = { id: 'second' }; auth.role = 'AGENT'; hook.rerender({ id: 'one' }); });
+  expect(signal.aborted).toBe(true); expect(hook.result.current.data).toBeUndefined();
+  expect(client.getQueryData(protectedQueryKeys.watching('first', 'USER', 'one'))).toBeUndefined(); client.clear();
+});
+it.each([false, true])('late mutation failure=%s cannot repopulate or invalidate another account', async (fail) => {
+  let finish; const client = new QueryClient(); api.set.mockImplementation(() => new Promise((resolve, reject) => { finish = () => fail ? reject(new Error('safe')) : resolve({ isWatching: true }); }));
+  const hook = renderHook(() => useSetWatching('one'), { wrapper: wrap(client) });
+  const spy = vi.spyOn(client, 'invalidateQueries'); let pending;
+  act(() => { pending = hook.result.current.mutateAsync(true).catch(() => {}); });
+  await waitFor(() => expect(finish).toBeTypeOf('function'));
+  await act(async () => { await clearProtectedCache(client); auth.user = { id: 'second' }; hook.rerender(); });
+  await act(async () => { finish(); await pending; });
+  expect(spy).not.toHaveBeenCalled(); expect(client.getQueryCache().getAll()).toHaveLength(0); client.clear();
+});
+it('successful watch invalidates current watching, detail, lists, saved executions and notifications', async () => {
+  const client = new QueryClient(); const spy = vi.spyOn(client, 'invalidateQueries'); api.set.mockResolvedValue({ isWatching: true });
+  const hook = renderHook(() => useSetWatching('one'), { wrapper: wrap(client) });
+  await act(async () => hook.result.current.mutateAsync(true));
+  for (const queryKey of [protectedQueryKeys.watching('first', 'USER', 'one'), protectedQueryKeys.ticket('first', 'one', 'USER'), protectedQueryKeys.tickets('first', 'USER'), protectedQueryKeys.personal('first', 'USER'), protectedQueryKeys.notifications('first')]) expect(spy).toHaveBeenCalledWith({ queryKey });
+  client.clear();
+});
