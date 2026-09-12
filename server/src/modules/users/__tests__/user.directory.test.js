@@ -9,16 +9,21 @@ test('strict bounded filters reject unknown identities, invalid enums, oversized
 });
 test('directory combines filters, caps rows, stable sorts and safely projects workload', async () => {
   mockDb.user.count.mockResolvedValue(43); mockDb.user.findMany.mockResolvedValue([{ id: 'id', _count: { ticketsAssigned: 3 } }]);
-  const result = await service.listUsers(listUsersQuerySchema.parse({ page: 2, search: ' Doe ', status: 'ALL', role: 'AGENT', verification: 'UNVERIFIED', department: 'IT', sort: 'name' }));
+  const result = await service.listUsers(listUsersQuerySchema.parse({ page: 2, search: ' Doe ', status: 'ALL', role: 'AGENT', verification: 'UNVERIFIED', departmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', sort: 'name' }));
   const args = mockDb.user.findMany.mock.calls[0][0];
-  expect(args).toMatchObject({ take: 20, skip: 20, orderBy: [{ name: 'asc' }, { id: 'asc' }], where: { role: 'AGENT', department: 'IT', emailVerified: false, OR: [{ name: { contains: 'Doe', mode: 'insensitive' } }, { email: { contains: 'Doe', mode: 'insensitive' } }] } });
+  expect(args).toMatchObject({ take: 20, skip: 20, orderBy: [{ name: 'asc' }, { id: 'asc' }], where: { role: 'AGENT', departmentId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', emailVerified: false, OR: [{ name: { contains: 'Doe', mode: 'insensitive' } }, { email: { contains: 'Doe', mode: 'insensitive' } }] } });
   expect(args.select).not.toHaveProperty('password'); expect(args.select).not.toHaveProperty('verificationToken');
-  expect(result).toEqual({ users: [{ id: 'id', activeWorkload: 3 }], pagination: { page: 2, limit: 20, total: 43, totalPages: 3 } });
+  expect(result).toEqual({ users: [{ id: 'id', department: null, activeWorkload: 3 }], pagination: { page: 2, limit: 20, total: 43, totalPages: 3 } });
 });
 test('summary uses eight database counts, not unrestricted account records', async () => {
   mockDb.user.count.mockImplementation(async ({ where }) => Object.keys(where).length ? 2 : 10);
   expect(await service.userSummary()).toEqual({ total: 10, active: 2, inactive: 2, admins: 2, agents: 2, users: 2, unverified: 2, withoutDepartment: 2 });
   expect(mockDb.user.findMany).not.toHaveBeenCalled();
+});
+test('missing-department filter intersects rather than silently overwrites an explicit department', async () => {
+  const departmentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await service.listUsers(listUsersQuerySchema.parse({ departmentId, missingDepartment: 'true' }));
+  expect(mockDb.user.findMany.mock.calls[0][0].where).toMatchObject({ departmentId, AND: [{ departmentId: null }] });
 });
 test('details omit raw audit metadata, comment bodies and credentials; recent lists are bounded', async () => {
   mockDb.user.findUnique.mockResolvedValue({ id: 'target', role: 'AGENT' }); mockDb.ticket.count.mockResolvedValue(2); mockDb.ticket.findMany.mockResolvedValue([]); mockDb.auditEvent.findMany.mockResolvedValue([]); mockDb.ticketSatisfaction.aggregate.mockResolvedValue({ _count: { rating: 0 }, _avg: { rating: null } });
@@ -34,9 +39,9 @@ test('every directory and lifecycle route is Admin-only except the existing staf
     const next = jest.fn(); layer.route.stack[0].handle({ user: { role: 'ADMIN' } }, {}, next); expect(next).toHaveBeenCalledWith();
   }
 });
-test('profile schema normalizes blank department to null and rejects privileged mass assignment', () => {
+test('profile schema accepts explicit null department ID and rejects privileged mass assignment', () => {
   const { updateProfileSchema } = require('../../settings/settings.schema');
-  expect(updateProfileSchema.parse({ name: ' Person ', department: ' ' })).toEqual({ name: 'Person', department: null });
-  for (const field of ['role', 'isActive', 'emailVerified', 'email', 'password']) expect(updateProfileSchema.safeParse({ name: 'Person', department: null, [field]: true }).success).toBe(false);
+  expect(updateProfileSchema.parse({ name: ' Person ', departmentId: null, previousDepartmentId: null })).toEqual({ name: 'Person', departmentId: null, previousDepartmentId: null });
+  for (const field of ['role', 'isActive', 'emailVerified', 'email', 'password']) expect(updateProfileSchema.safeParse({ name: 'Person', departmentId: null, previousDepartmentId: null, [field]: true }).success).toBe(false);
   expect(updateProfileSchema.safeParse({ name: 'Person', department: 'x'.repeat(101) }).success).toBe(false);
 });

@@ -1,4 +1,8 @@
 const originalEnv = { ...process.env };
+jest.mock('../../emailLogs/emailLog.service', () => ({
+  begin: jest.fn(async () => ({ row: { id: 'log-fixture', status: 'DISABLED' }, shouldSend: require('../../../config/env').EMAIL_PROVIDER !== 'disabled' })),
+  finish: jest.fn(async () => true),
+}));
 
 afterEach(() => {
   jest.dontMock('../../../config/env');
@@ -24,7 +28,7 @@ describe('mailer provider facade', () => {
   });
 
   test('resend returns only accepted status and pins safe SDK request options', async () => {
-    const send = jest.fn().mockResolvedValue({ data: { id: 'email-id-1' } });
+    const send = jest.fn().mockResolvedValue({ data: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } });
     const { sendMail, Resend } = loadMailer({
       EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'test-key', EMAIL_FROM: 'from@example.test', EMAIL_REPLY_TO: 'reply@example.test', EMAIL_DELIVERY_TIMEOUT_MS: 10000,
     }, send);
@@ -38,14 +42,14 @@ describe('mailer provider facade', () => {
   });
 
   test.each([
-    ['provider error', jest.fn().mockResolvedValue({ error: { message: 'private provider detail' } })],
-    ['provider throw', jest.fn().mockRejectedValue(new Error('private provider detail'))],
-  ])('resend maps %s to safe failed status', async (_name, send) => {
+    ['provider error', jest.fn().mockResolvedValue({ error: { statusCode: 422, message: 'private provider detail' } }), 'failed'],
+    ['provider throw', jest.fn().mockRejectedValue(new Error('private provider detail')), 'unknown'],
+  ])('resend maps %s to safe evidence-based status', async (_name, send, status) => {
     const { sendMail } = loadMailer({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'test-key', EMAIL_FROM: 'from@example.test', EMAIL_DELIVERY_TIMEOUT_MS: 10000 }, send);
-    await expect(sendMail({ to: 'person@example.test', subject: 'Verify', html: '<p>Hi</p>', text: 'Hi', idempotencyKey: 'verify-email/row-1' })).resolves.toEqual({ status: 'failed' });
+    await expect(sendMail({ to: 'person@example.test', subject: 'Verify', html: '<p>Hi</p>', text: 'Hi', idempotencyKey: 'verify-email/row-1' })).resolves.toEqual({ status });
   });
 
-  test('resend timeout maps to safe failed status', async () => {
+  test('resend timeout maps to safe unknown status', async () => {
     jest.useFakeTimers();
     let signal;
     const send = jest.fn((_payload, options) => {
@@ -55,7 +59,7 @@ describe('mailer provider facade', () => {
     const { sendMail } = loadMailer({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'test-key', EMAIL_FROM: 'from@example.test', EMAIL_DELIVERY_TIMEOUT_MS: 10 }, send);
     const result = sendMail({ to: 'person@example.test', subject: 'Verify', html: '<p>Hi</p>', text: 'Hi', idempotencyKey: 'verify-email/row-1' });
     await jest.advanceTimersByTimeAsync(10);
-    await expect(result).resolves.toEqual({ status: 'failed' });
+    await expect(result).resolves.toEqual({ status: 'unknown' });
     expect(signal.aborted).toBe(true);
     jest.useRealTimers();
   });

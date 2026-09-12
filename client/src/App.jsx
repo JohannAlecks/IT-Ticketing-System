@@ -17,6 +17,8 @@ import CreateTicketPage from './pages/CreateTicketPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
+import DepartmentsPage from './pages/DepartmentsPage';
+import EmailLogsPage from './pages/EmailLogsPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AuditLogPage from './pages/AuditLogPage';
 import GetStartedPage from './pages/GetStartedPage';
@@ -69,6 +71,8 @@ export default function App() {
           {/* Admin-only */}
           <Route element={<ProtectedRoute roles={['ADMIN']} />}>
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/departments" element={<DepartmentsPage />} />
+            <Route path="/email-logs" element={<EmailLogsPage />} />
             <Route path="/audit-log" element={<AuditLogPage />} />
           </Route>
         </Route>

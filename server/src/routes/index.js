@@ -3,6 +3,8 @@ const router = express.Router();
 
 router.use('/auth', require('../modules/auth/auth.routes'));
 router.use('/users', require('../modules/users/user.routes'));
+router.use('/departments', require('../modules/departments/department.routes'));
+router.use('/email-logs', require('../modules/emailLogs/emailLog.routes'));
 router.use('/tickets', require('../modules/tickets/ticket.routes'));
 router.use('/dashboard', require('../modules/dashboard/dashboard.routes'));
 router.use('/reports', require('../modules/reports/report.routes'));

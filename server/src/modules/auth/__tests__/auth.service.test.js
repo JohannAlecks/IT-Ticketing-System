@@ -82,7 +82,7 @@ describe('register', () => {
     expect(result).not.toHaveProperty('token');
   });
 
-  test.each(['accepted', 'unavailable', 'failed'])('keeps account and hashed token when delivery is %s', async (status) => {
+  test.each(['accepted', 'unavailable', 'failed', 'unknown'])('keeps account and hashed token when delivery is %s', async (status) => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     mockPrisma.user.create.mockResolvedValue(baseUser());
     mockPrisma.emailVerificationToken.deleteMany.mockResolvedValue({ count: 0 });

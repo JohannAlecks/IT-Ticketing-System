@@ -6,6 +6,12 @@ import { authApi } from '../api/auth.api';
 import Button from '../components/ui/Button';
 
 const DELIVERY_STATES = {
+  unknown: {
+    icon: CircleAlert,
+    iconClassName: 'bg-amber-50 text-amber-700',
+    title: 'Verification email outcome not confirmed',
+    description: () => <>Your account was created, but the provider outcome could not be confirmed. The email may still arrive. Check your inbox and spam folder before requesting a new verification link.</>,
+  },
   accepted: {
     icon: MailCheck,
     iconClassName: 'bg-brand-50 text-brand-600',

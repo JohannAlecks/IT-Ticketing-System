@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { departmentSelect, departmentName } = require('../departments/department.projection');
 const AppError = require('../../utils/AppError');
 const { feedbackSchema } = require('./satisfaction.schema');
 const { writeNotifications, eventEntry } = require('../notifications/notification.service');
@@ -12,13 +13,13 @@ const conflict = () => new AppError('Feedback or resolution cycle changed. Reloa
 
 // Only after a successful conditional RESOLVED transition, in its transaction.
 async function recordResolution(tx, ticket, actor, resolvedAt) {
-  const requester = await tx.user.findUnique({ where: { id: ticket.createdById }, select: { department: true } });
+  const requester = await tx.user.findUnique({ where: { id: ticket.createdById }, select: departmentSelect });
   const assigned = actor.role === 'AGENT' && ticket.assignedToId
     ? await tx.user.findUnique({ where: { id: ticket.assignedToId }, select: { role: true } }) : null;
   return tx.ticketResolutionCycle.create({ data: {
     ticketId: ticket.id, number: (ticket.satisfactionCycleNumber || 0) + 1,
     requesterId: ticket.createdById, assignedAgentId: assigned?.role === 'AGENT' ? ticket.assignedToId : null,
-    departmentSnapshot: requester?.department?.trim().slice(0, 100) || null, resolvedAt,
+    departmentSnapshot: departmentName(requester)?.trim().slice(0, 100) || null, resolvedAt,
   } });
 }
 

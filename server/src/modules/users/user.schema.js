@@ -24,7 +24,7 @@ const listUsersQuerySchema = z.object({
   role: z.enum(['ADMIN', 'AGENT', 'USER']).optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).optional().default('ACTIVE'),
   search: z.string().trim().max(100).optional(),
-  department: z.string().trim().min(1).max(100).optional(),
+  departmentId: z.string().uuid().optional(),
   missingDepartment: z.enum(['true', 'false']).optional(),
   verification: z.enum(['VERIFIED', 'UNVERIFIED']).optional(),
   sort: z.enum(['name', 'newest', 'oldest', 'role', 'department']).default('newest'),

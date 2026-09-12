@@ -3,6 +3,7 @@ import { Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import { useUsers, useUserSummary, useCreateUser } from '../hooks/useUsers';
 import UserDetails from '../components/users/UserDetails';
+import DepartmentPicker from '../components/settings/DepartmentPicker';
 import AccountDialog from '../components/ui/AccountDialog';
 import { formatDate } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
@@ -56,7 +57,7 @@ function CreateUserModal({ onClose }) {
 export function readUserFilters(url) {
   const oneOf = (key, allowed, fallback) => allowed.includes(url.get(key)) ? url.get(key) : fallback;
   return { status: oneOf('status', ['ACTIVE', 'INACTIVE', 'ALL'], 'ACTIVE'), role: oneOf('role', ROLE_OPTIONS, undefined),
-    search: (url.get('search') || '').slice(0, 100), department: (url.get('department') || '').slice(0, 100) || undefined,
+    search: (url.get('search') || '').slice(0, 100), departmentId: /^[a-f0-9-]{36}$/i.test(url.get('departmentId') || '') ? url.get('departmentId') : undefined,
     verification: oneOf('verification', ['VERIFIED', 'UNVERIFIED'], undefined), missingDepartment: oneOf('missingDepartment', ['true'], undefined),
     sort: oneOf('sort', ['name', 'newest', 'oldest', 'role', 'department'], 'newest'),
     page: /^[0-9]+$/.test(url.get('page') || '') ? Math.min(100000, Math.max(1, Number(url.get('page')))) : 1, limit: 20 };
@@ -77,10 +78,10 @@ function UsersDirectory() {
       <Input label="Search name or email" type="search" maxLength={100} value={filters.search} onChange={(e) => update({ search: e.target.value })} />
       <Select label="Account status" value={filters.status} onChange={(e) => update({ status: e.target.value })}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option><option value="ALL">All users</option></Select>
       <Select label="Role filter" value={filters.role || ''} onChange={(e) => update({ role: e.target.value })}><option value="">All roles</option>{ROLE_OPTIONS.map((role) => <option key={role}>{role}</option>)}</Select>
-      <Input label="Department filter (exact)" maxLength={100} value={filters.department || ''} onChange={(e) => update({ department: e.target.value, missingDepartment: undefined })} />
+      <DepartmentPicker label="Department filter" emptyLabel="All departments" includeInactive value={filters.departmentId} onChange={(departmentId) => update({ departmentId, missingDepartment: undefined })} />
       <Select label="Email verification" value={filters.verification || ''} onChange={(e) => update({ verification: e.target.value })}><option value="">Any verification</option><option value="VERIFIED">Verified</option><option value="UNVERIFIED">Unverified</option></Select>
       <Select label="Sort accounts" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>{[['newest', 'Newest first'], ['oldest', 'Oldest first'], ['name', 'Name A–Z'], ['role', 'Role'], ['department', 'Department A–Z']].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</Select>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={filters.missingDepartment === 'true'} onChange={(e) => update({ missingDepartment: e.target.checked ? 'true' : undefined, department: undefined })} />Without department</label>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={filters.missingDepartment === 'true'} onChange={(e) => update({ missingDepartment: e.target.checked ? 'true' : undefined, departmentId: undefined })} />Without department</label>
       <Button variant="secondary" onClick={() => update({ status: 'ACTIVE' }, true)}>Clear filters</Button>
     </section>
     {query.isPending && <div role="status"><Spinner />Loading users…</div>}{query.isError && <ErrorState message="Couldn't load users." onRetry={() => query.refetch()} />}

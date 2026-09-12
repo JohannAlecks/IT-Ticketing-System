@@ -168,7 +168,7 @@ test('ADMIN summary excludes inactive agents from workload, batches active count
   expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
   expect(prisma.user.findMany).toHaveBeenCalledWith({
     where: { OR: [{ id: { in: ['requester-1'] } }, { role: 'AGENT', isActive: true }] },
-    select: { id: true, name: true, department: true, role: true, isActive: true }, orderBy: { name: 'asc' },
+    select: { id: true, name: true, ...require('../../departments/department.projection').departmentSelect, role: true, isActive: true }, orderBy: { name: 'asc' },
   });
   expect(prisma.ticket.groupBy).toHaveBeenNthCalledWith(4, {
     by: ['assignedToId', 'status'], where: { archivedAt: null, status: { in: ['OPEN', 'IN_PROGRESS', 'PENDING'] } }, _count: { _all: true },

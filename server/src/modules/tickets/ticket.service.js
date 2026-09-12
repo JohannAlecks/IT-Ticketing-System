@@ -1,10 +1,11 @@
 const prisma = require('../../config/prisma');
+const { departmentSelect, exposeDepartment, departmentFilter } = require('../departments/department.projection');
 const { randomUUID } = require('crypto');
 const { notifyTicketWatchers } = require('../watchers/watcher.service');
 const { recordResolution } = require('../satisfaction/satisfaction.service');
 const AppError = require('../../utils/AppError');
-const fs = require('fs');
-const { resolveUploadPath } = require('../../middleware/upload');
+const { store: attachmentStore } = require('../attachments/attachment.storage');
+const { lockStorage, cleanupFiles } = require('../attachments/attachment.cleanup');
 const { recordAudit } = require('../audit/audit.service');
 const { writeNotifications, ticketReference, statusLabel, eventEntry } = require('../notifications/notification.service');
 const { buildTicketVisibilityFilter, assertTicketVisible, assertTicketIsActive } = require('./ticket.access');
@@ -12,7 +13,7 @@ const { ACTIVE_STATUSES, SLA_HISTORY_DESCRIPTIONS, createSnapshot, staffPayload,
 
 function ticketInclude(user) {
   return {
-    createdBy: { select: { id: true, name: true, email: true, department: true } },
+    createdBy: { select: { id: true, name: true, email: true, ...departmentSelect } },
     assignedTo: {
       select: user.role === 'USER'
         ? { id: true, name: true }
@@ -60,6 +61,7 @@ function exposeTicket(ticket, user, now = new Date()) {
   }
   return {
     ...visibleTicket,
+    ...(visibleTicket.createdBy ? { createdBy: exposeDepartment(visibleTicket.createdBy) } : {}),
     ...(['AGENT', 'ADMIN'].includes(user.role) ? { pendingReason: pendingReason || null } : {}),
     ...(user.role === 'USER' || user.role === 'AGENT' ? {} : { archivedById, archivedBy }),
     sla: user.role === 'USER' ? requesterPayload(rawSla, now) : (canSeeStaffSla ? staffPayload(rawSla, now) : null),
@@ -90,7 +92,7 @@ async function listTickets(user, query, db = prisma) {
       pendingReason ? { status: 'PENDING', pendingReason } : {},
       ...(slaState && user.role === 'AGENT' ? [{ assignedToId: user.id }] : []),
       ...(slaState ? [slaFilterWhere(slaState, now)] : []),
-      ...(department && user.role === 'ADMIN' ? [{ createdBy: { department } }] : []),
+      ...(department && user.role === 'ADMIN' ? [{ createdBy: departmentFilter(department) }] : []),
       search
         ? {
             OR: [
@@ -510,6 +512,7 @@ const restoreTicket = (id, user) => setArchivedState(id, user, false);
 
 async function deleteTicket(id, auditContext = {}) {
   const attachments = await prisma.$transaction(async (tx) => {
+    await lockStorage(tx);
     const existing = await tx.ticket.findUnique({
       where: { id },
       include: { attachments: { select: { id: true, storagePath: true, originalFileName: true } } },
@@ -519,31 +522,19 @@ async function deleteTicket(id, auditContext = {}) {
     if (existing.satisfactionCycleNumber > 0) throw new AppError('Tickets with completed feedback cycles must be archived instead of deleted', 409);
     // All paths must be valid before the cascade removes any attachment
     // metadata. This prevents an unsafe row from producing a partial delete.
-    const inventory = existing.attachments.map((attachment) => ({ ...attachment, absolutePath: resolveUploadPath(attachment.storagePath) }));
+    const inventory = [];
+    for (const attachment of existing.attachments) {
+      inventory.push({ ...attachment, identity: await attachmentStore.inspect(attachment.storagePath) });
+    }
     const deleted = await tx.ticket.deleteMany({ where: { id, archivedAt: null, updatedAt: existing.updatedAt } });
     if (deleted.count !== 1) throw new AppError('This ticket was changed by another request. Refresh and try again.', 409);
     return inventory;
+  }).catch((error) => {
+    if (error instanceof AppError) throw error;
+    throw new AppError('Ticket could not be deleted', 503);
   });
 
-  const failures = [];
-  for (const attachment of attachments) {
-    try {
-      await fs.promises.unlink(attachment.absolutePath);
-    } catch (error) {
-      if (error.code !== 'ENOENT') failures.push({ attachment, error });
-    }
-  }
-  if (failures.length) {
-    await Promise.all(failures.map(({ attachment, error }) => recordAudit({
-      eventType: 'attachment.cleanup_failed',
-      entityType: 'attachment',
-      entityId: attachment.id,
-      actorUserId: auditContext.actorUserId,
-      requestId: auditContext.requestId,
-      metadata: { ticketId: id, operation: 'ticket.delete', storagePath: attachment.storagePath, error: error.message },
-    })));
-    throw new AppError(`Ticket was deleted, but ${failures.length} attachment file cleanup operation(s) failed.`, 500);
-  }
+  await cleanupFiles(prisma, attachments, { ...auditContext, ticketId: id, operation: 'ticket.delete' });
 }
 
 module.exports = {

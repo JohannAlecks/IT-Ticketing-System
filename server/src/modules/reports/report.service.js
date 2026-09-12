@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { departmentSelect, departmentName, departmentFilter } = require('../departments/department.projection');
 const AppError = require('../../utils/AppError');
 const { ACTIVE_STATUSES, TICKET_STATUSES, TICKET_CATEGORIES, TICKET_PRIORITIES } = require('./report.definitions');
 const { slaFilterWhere, TIME_MODEL } = require('../sla/sla.engine');
@@ -90,7 +91,7 @@ function dimensionalClauses(filters) {
   if (filters.workBlocking === 'no') clauses.push({ isWorkBlocking: false });
   if (filters.search) clauses.push({ title: { contains: filters.search, mode: 'insensitive' } });
   if (filters.agentId) clauses.push({ assignedToId: filters.agentId });
-  if (filters.department) clauses.push({ createdBy: { department: filters.department } });
+  if (filters.department) clauses.push({ createdBy: departmentFilter(filters.department) });
   return clauses;
 }
 
@@ -292,7 +293,7 @@ async function getAgentSummary(user, filters, range, generatedAt) {
 }
 
 function mapDepartmentCounts(rows, users) {
-  const departments = new Map(users.map((user) => [user.id, user.department]));
+  const departments = new Map(users.map((user) => [user.id, departmentName(user)]));
   const counts = { Unknown: 0 };
   for (const row of rows) {
     const department = departments.get(row.createdById) || 'Unknown';
@@ -335,7 +336,7 @@ async function getAdminSummary(user, filters, range, generatedAt) {
     prisma.ticket.groupBy({ by: ['createdById'], where: createdWhere, _count: { _all: true } }),
     prisma.ticket.groupBy({ by: ['assignedToId', 'status'], where: activeWhere, _count: { _all: true } }),
     prisma.user.findMany({ where: { role: 'AGENT', isActive: true }, select: { id: true, name: true, role: true, isActive: true }, orderBy: { name: 'asc' } }),
-    prisma.user.findMany({ where: { department: { not: null } }, select: { department: true }, distinct: ['department'], orderBy: { department: 'asc' } }),
+    prisma.user.findMany({ where: { OR: [{ departmentId: { not: null } }, { department: { not: null } }] }, select: departmentSelect, distinct: ['departmentId', 'department'], orderBy: { department: 'asc' } }),
     boundedHistory(resolutionHistoryWhere, { createdAt: true, metadata: true, user: { select: { id: true, name: true, role: true, isActive: true } } }),
     boundedHistory(reopenWhere, { createdAt: true, metadata: true }),
     boundedTicketEvents(createdWhere, 'createdAt'),
@@ -343,7 +344,7 @@ async function getAdminSummary(user, filters, range, generatedAt) {
   ]);
   const requesterIds = byRequester.map((row) => row.createdById);
   const requesters = requesterIds.length
-    ? await prisma.user.findMany({ where: { id: { in: requesterIds } }, select: { id: true, department: true } })
+    ? await prisma.user.findMany({ where: { id: { in: requesterIds } }, select: { id: true, ...departmentSelect } })
     : [];
   const resolvedEvents = resolutionEvents.filter((event) => isResolution(event.metadata) && event.user?.role === 'AGENT');
   const activities = new Map();
@@ -387,7 +388,7 @@ async function getAdminSummary(user, filters, range, generatedAt) {
     },
     filterOptions: {
       agents: agents.map(({ id, name }) => ({ id, name })),
-      departments: [...new Set(departments.map((row) => row.department && row.department.trim()).filter(Boolean))],
+      departments: [...new Set(departments.map((row) => departmentName(row)?.trim()).filter(Boolean))],
     },
     sla,
   });
@@ -403,7 +404,7 @@ async function getSummary(user, query) {
 
 function ticketRowSelect(role) {
   return role === 'ADMIN'
-    ? { ...ticketSelect, createdBy: { select: { department: true } } }
+    ? { ...ticketSelect, createdBy: { select: { ...departmentSelect } } }
     : ticketSelect;
 }
 
@@ -418,7 +419,7 @@ function mapTicket(row, role) {
     createdAt: row.createdAt.toISOString(),
     closedAt: row.closedAt ? row.closedAt.toISOString() : null,
     assignedAgent: row.assignedTo ? { id: row.assignedTo.id, name: row.assignedTo.name } : null,
-    ...(role === 'ADMIN' && { requesterDepartment: row.createdBy?.department || 'Unknown' }),
+    ...(role === 'ADMIN' && { requesterDepartment: departmentName(row.createdBy) || 'Unknown' }),
   };
 }
 
@@ -464,7 +465,7 @@ function toCsv(rows, role) {
     : ['Ticket ID', 'Title', 'Status', 'Category', 'Priority', 'Work Blocking', 'Created At UTC', 'Closed At UTC'];
   const records = rows.map((row) => {
     const cells = [row.id, row.title, row.status, row.category, row.priority, row.isWorkBlocking ? 'Yes' : 'No', row.createdAt.toISOString(), row.closedAt ? row.closedAt.toISOString() : ''];
-    if (role === 'ADMIN') cells.push(row.createdBy?.department || 'Unknown', row.assignedTo?.name || '');
+    if (role === 'ADMIN') cells.push(departmentName(row.createdBy) || 'Unknown', row.assignedTo?.name || '');
     return cells.map(csvCell).join(',');
   });
   return `\uFEFF${headers.map(csvCell).join(',')}\r\n${records.join('\r\n')}${records.length ? '\r\n' : ''}`;

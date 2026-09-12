@@ -30,6 +30,7 @@ describe('CheckEmailPage delivery states', () => {
     ['accepted', 'Verification email request accepted', 'does not guarantee that the email reached your inbox'],
     ['unavailable', 'Email delivery is unavailable', 'email delivery is not available in this environment'],
     ['failed', 'Verification email request failed', 'verification email request could not be completed'],
+    ['unknown', 'Verification email outcome not confirmed', 'email may still arrive'],
   ])('displays the %s registration delivery state', (status, title, description) => {
     renderCheckEmail(status);
 

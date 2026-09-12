@@ -14,7 +14,8 @@
     "prisma:generate": "prisma generate",
     "prisma:check-client": "node scripts/check-prisma-client.js",
     "prisma:seed": "node prisma/seed.js",
-    "sla:sweep": "node scripts/sla-sweep.js"
+    "sla:sweep": "node scripts/sla-sweep.js",
+    "attachments:cleanup": "node scripts/attachment-cleanup.js"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",

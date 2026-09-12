@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useUserDetails, useUpdateUserRole, useDeactivateUser, useReactivateUser } from '../../hooks/useUsers';
+import DepartmentPicker from '../settings/DepartmentPicker';
+import { useDepartmentMutation } from '../../hooks/useDepartments';
 import { useAuth } from '../../context/AuthContext';
 import { AccountFacts } from '../settings/AccountPanels';
 import AccountDialog from '../ui/AccountDialog';
@@ -9,9 +11,10 @@ import Select from '../ui/Select';
 import { formatDateTime } from '../../utils/format';
 export default function UserDetails({ id, action = 'details', onClose }) {
   const query = useUserDetails(id); const { user: actor } = useAuth();
+  const assign = useDepartmentMutation('assign'); const [department, setDepartment] = useState(undefined); const [departmentError, setDepartmentError] = useState(null);
   const changeRole = useUpdateUserRole(); const deactivate = useDeactivateUser(); const reactivate = useReactivateUser();
   const [proposed, setProposed] = useState(''); const [error, setError] = useState(null); const [saving, setSaving] = useState(false);
-  const busy = saving || changeRole.isPending || deactivate.isPending || reactivate.isPending;
+  const busy = saving || assign.isPending || changeRole.isPending || deactivate.isPending || reactivate.isPending;
   const data = query.data; const target = data?.user;
   const pending = useRef(false);
   const submit = async () => { if (pending.current || busy || !target || target.id === actor.id) return; pending.current = true; setSaving(true); setError(null); try {
@@ -23,6 +26,7 @@ export default function UserDetails({ id, action = 'details', onClose }) {
     {query.isPending && <p role="status">Loading current account…</p>}{query.isError && <p role="alert">Account details could not be loaded. <Button onClick={() => query.refetch()}>Retry account</Button></p>}
     {target && <div className="space-y-5"><h3 className="break-words text-lg font-semibold">{target.name}</h3><AccountFacts user={target} /><p className="text-sm">Department: {target.department || 'Not specified'}</p><p>Active assigned workload: <strong>{data.activeWorkload}</strong></p>
       {action === 'details' ? <>
+        <section className="space-y-3"><h3 className="font-semibold">Current department</h3><DepartmentPicker value={department === undefined ? target.departmentId : department} current={target.departmentRecord} disabled={busy} onChange={setDepartment} /><Button disabled={busy || department === undefined || department === (target.departmentId || null)} onClick={async () => { if (!window.confirm('Change this account’s current department? Historical snapshots remain unchanged.')) return; setDepartmentError(null); try { await assign.mutateAsync({ userId: id, departmentId: department, previousDepartmentId: target.departmentId || null }); setDepartment(undefined); } catch { setDepartmentError('Department change could not be completed. Refresh and try again.'); } }}>Save account department</Button>{departmentError && <p role="alert">{departmentError}</p>}</section>
         {data.sla && <p className="text-sm">Agent SLA: {data.sla.dueSoon} due soon · {data.sla.breached} breached</p>}
         {data.csat && <p className="text-sm">Agent CSAT: {data.csat.count ? `${Number(data.csat.average).toFixed(1)}/5 from ${data.csat.count} ratings` : 'No ratings yet'}</p>}
         <section><h3 className="mb-2 font-semibold">Recent ticket updates</h3><p className="text-xs text-slate-500">Ticket update times, not last login or user activity.</p><ul className="space-y-2">{data.recentTickets.map((ticket) => <li key={ticket.id} className="break-words text-sm"><Link className="text-brand-700 underline" to={`/tickets/${ticket.id}`} onClick={onClose}>{ticket.title}</Link> · {ticket.status} {ticket.archivedAt ? '· Archived' : ''}<p className="text-xs text-slate-500">{formatDateTime(ticket.updatedAt)}</p></li>)}</ul>{!data.recentTickets.length && <p className="text-sm text-slate-500">No recent tickets.</p>}</section>

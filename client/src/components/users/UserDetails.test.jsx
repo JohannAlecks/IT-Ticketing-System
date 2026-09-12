@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import UserDetails from './UserDetails';
+vi.mock('../../hooks/useDepartments', () => ({ useDepartmentMutation: () => ({ mutateAsync: vi.fn() }), useDepartments: () => ({ data: { departments: [], pagination: { totalPages: 1 } } }) }));
 const state = vi.hoisted(() => ({ target: {}, change: vi.fn(), deactivate: vi.fn(), reactivate: vi.fn() }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin' }, role: 'ADMIN' }) }));
 vi.mock('../../hooks/useUsers', () => ({

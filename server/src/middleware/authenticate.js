@@ -1,6 +1,7 @@
 const AppError = require('../utils/AppError');
 const { verifyToken } = require('../utils/jwt');
 const prisma = require('../config/prisma');
+const { departmentSelect, exposeDepartment } = require('../modules/departments/department.projection');
 const asyncHandler = require('../utils/asyncHandler');
 
 const authenticate = asyncHandler(async (req, res, next) => {
@@ -15,7 +16,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.sub },
-    select: { id: true, name: true, email: true, role: true, isActive: true, emailVerified: true, department: true },
+    select: { id: true, name: true, email: true, role: true, isActive: true, emailVerified: true, ...departmentSelect },
   });
 
   if (!user || !user.isActive) {
@@ -30,7 +31,7 @@ const authenticate = asyncHandler(async (req, res, next) => {
     throw new AppError('Please verify your email address before continuing.', 401);
   }
 
-  req.user = user;
+  req.user = exposeDepartment(user);
   next();
 });
 

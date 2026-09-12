@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { departmentSelect, exposeDepartment } = require('../departments/department.projection');
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { signToken } = require('../../utils/jwt');
@@ -24,7 +25,7 @@ function resendGenericResult() {
 }
 
 function deliveryStatus(result) {
-  return ['accepted', 'unavailable', 'failed'].includes(result?.status) ? result.status : 'failed';
+  return ['accepted', 'unavailable', 'failed', 'unknown'].includes(result?.status) ? result.status : 'unknown';
 }
 
 // Database mutations are completed before any provider call. This lets a
@@ -44,6 +45,7 @@ async function deliverVerificationEmail(user, issued) {
   try {
     const result = await sendMail({
       ...buildVerificationEmail(user, issued.rawToken),
+      messageType: 'EMAIL_VERIFICATION',
       idempotencyKey: `verify-email/${issued.record.id}`.slice(0, 256),
     });
     return { status: deliveryStatus(result) };
@@ -93,7 +95,7 @@ async function register({ name, email, password }) {
     if (existing) throw new AppError('An account with this email already exists', 409);
     const createdUser = await tx.user.create({
       data: { name, email, password: hashedPassword, role: 'USER', emailVerified: false },
-      select: { id: true, name: true, email: true, role: true, department: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, ...departmentSelect, createdAt: true },
     });
     return { user: createdUser, issued: await createVerificationToken(tx, createdUser) };
   });
@@ -105,7 +107,7 @@ async function register({ name, email, password }) {
 }
 
 async function login({ email, password }) {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { email }, include: { departmentRecord: departmentSelect.departmentRecord } });
 
   if (!user || !user.isActive) {
     throw new AppError('Invalid email or password', 401);
@@ -126,7 +128,7 @@ async function login({ email, password }) {
   const token = signToken({ sub: user.id, role: user.role });
 
   const { password: _password, ...safeUser } = user;
-  return { user: safeUser, token };
+  return { user: exposeDepartment(safeUser), token };
 }
 
 async function verifyEmail(rawToken, requestId) {
@@ -213,10 +215,10 @@ async function resendVerification(email, requestId) {
 async function getProfile(userId) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, name: true, email: true, role: true, isActive: true, emailVerified: true, department: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, isActive: true, emailVerified: true, ...departmentSelect, createdAt: true },
   });
   if (!user) throw new AppError('User not found', 404);
-  return user;
+  return exposeDepartment(user);
 }
 
 module.exports = { register, login, verifyEmail, resendVerification, getProfile, createVerificationToken, deliverVerificationEmail };

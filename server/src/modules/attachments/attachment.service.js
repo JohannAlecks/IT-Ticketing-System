@@ -1,9 +1,7 @@
-const fs = require('fs');
-const path = require('path');
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
-const { resolveUploadPath } = require('../../middleware/upload');
-const { recordAudit } = require('../audit/audit.service');
+const { store } = require('./attachment.storage');
+const { lockStorage, cleanupFiles } = require('./attachment.cleanup');
 const { assertTicketVisible, assertTicketIsActive, lockActiveTicketForMutation } = require('../tickets/ticket.access');
 
 async function listAttachments(ticketId, user) {
@@ -21,32 +19,21 @@ async function listAttachments(ticketId, user) {
 async function uploadAttachment(ticketId, file, user) {
   if (!file) throw new AppError('No file was uploaded', 400);
 
-  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-  if (!ticket) {
-    // Clean up the already-written temp file since we're rejecting the request
-    fs.unlink(file.path, () => {});
-    throw new AppError('Ticket not found', 404);
-  }
-  try {
-    assertTicketVisible(ticket, user);
-    assertTicketIsActive(ticket);
-  } catch (err) {
-    fs.unlink(file.path, () => {});
-    throw err;
-  }
-
+  const storagePath = store.uploadedName(file.path);
   try {
     return await prisma.$transaction(async (tx) => {
+      await lockStorage(tx);
       const currentTicket = await tx.ticket.findUnique({ where: { id: ticketId } });
       if (!currentTicket) throw new AppError('Ticket not found', 404);
       assertTicketVisible(currentTicket, user);
       await lockActiveTicketForMutation(tx, currentTicket);
+      if (!await store.inspect(storagePath)) throw new AppError('Uploaded file is no longer available; please upload again', 409);
       const attachment = await tx.ticketAttachment.create({
         data: {
           ticketId,
           uploadedById: user.id,
           originalFileName: file.originalname,
-          storagePath: path.basename(file.path), // store only the generated filename, not an absolute path
+          storagePath,
           mimeType: file.mimetype,
           fileSize: file.size,
         },
@@ -65,10 +52,8 @@ async function uploadAttachment(ticketId, file, user) {
       return attachment;
     });
   } catch (error) {
-    // This is only the newly uploaded file; existing attachment data/files
-    // are never touched when an archived-state or authorization guard rejects.
-    fs.unlink(file.path, () => {});
-    throw error;
+    await cleanupFiles(prisma, [{ storagePath }], { ticketId, actorUserId: user.id, operation: 'upload.rejected' });
+    throw error instanceof AppError ? error : new AppError('Attachment could not be saved', 503);
   }
 }
 
@@ -82,8 +67,8 @@ async function getAttachmentForDownload(ticketId, attachmentId, user) {
     throw new AppError('Attachment not found', 404);
   }
 
-  const absolutePath = resolveUploadPath(attachment.storagePath);
-  if (!fs.existsSync(absolutePath)) {
+  const absolutePath = store.resolve(attachment.storagePath);
+  if (!await store.inspect(attachment.storagePath)) {
     throw new AppError('The file for this attachment is missing from storage', 404);
   }
 
@@ -91,61 +76,35 @@ async function getAttachmentForDownload(ticketId, attachmentId, user) {
 }
 
 async function deleteAttachment(ticketId, attachmentId, user) {
-  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
-  if (!ticket) throw new AppError('Ticket not found', 404);
-  assertTicketVisible(ticket, user);
-
-  const attachment = await prisma.ticketAttachment.findUnique({ where: { id: attachmentId } });
-  if (!attachment || attachment.ticketId !== ticketId) {
-    throw new AppError('Attachment not found', 404);
-  }
-
-  // Deletion permissions, per the existing RBAC pattern:
-  // - ADMIN: can delete any attachment on any ticket they can access (all tickets)
-  // - AGENT: can delete attachments on tickets visible to them (checked above),
-  //          but only ones they uploaded themselves, or if they're the assigned agent
-  // - USER: can only delete their own uploads, on their own ticket
-  const isOwnUpload = attachment.uploadedById === user.id;
-  const isAssignedAgent = user.role === 'AGENT' && ticket.assignedToId === user.id;
-  const canDelete = user.role === 'ADMIN' || isOwnUpload || isAssignedAgent;
-
-  if (!canDelete) {
-    throw new AppError('You do not have permission to delete this attachment', 403);
-  }
-
-  const absolutePath = resolveUploadPath(attachment.storagePath);
-
-  await prisma.$transaction(async (tx) => {
+  let attachment;
+  try { attachment = await prisma.$transaction(async (tx) => {
+    await lockStorage(tx);
     const currentTicket = await tx.ticket.findUnique({ where: { id: ticketId } });
     if (!currentTicket) throw new AppError('Ticket not found', 404);
     assertTicketVisible(currentTicket, user);
+    assertTicketIsActive(currentTicket);
     await lockActiveTicketForMutation(tx, currentTicket);
+    const current = await tx.ticketAttachment.findUnique({ where: { id: attachmentId } });
+    if (!current || current.ticketId !== ticketId) throw new AppError('Attachment not found', 404);
+    if (user.role !== 'ADMIN' && current.uploadedById !== user.id &&
+        !(user.role === 'AGENT' && currentTicket.assignedToId === user.id)) {
+      throw new AppError('You do not have permission to delete this attachment', 403);
+    }
+    const identity = await store.inspect(current.storagePath);
     await tx.ticketAttachment.delete({ where: { id: attachmentId } });
     await tx.ticketHistory.create({
       data: {
         ticketId,
         userId: user.id,
         action: 'ATTACHMENT_DELETED',
-        description: `${user.name} removed attachment ${attachment.originalFileName}`,
+        description: `${user.name} removed attachment ${current.originalFileName}`,
       },
     });
-  });
-
-  try {
-    await fs.promises.unlink(absolutePath);
-  } catch (error) {
-    // Missing storage is safe. Other errors leave an orphan after metadata
-    // deletion, so make the partial result explicit and audit it.
-    if (error.code === 'ENOENT') return;
-    await recordAudit({
-      eventType: 'attachment.cleanup_failed',
-      entityType: 'attachment',
-      entityId: attachmentId,
-      actorUserId: user.id,
-      metadata: { ticketId, operation: 'attachment.delete', storagePath: attachment.storagePath, error: error.message },
-    });
-    throw new AppError('Attachment metadata was deleted, but file cleanup failed.', 500);
+    return { ...current, identity };
+  }); } catch (error) {
+    throw error instanceof AppError ? error : new AppError('Attachment could not be deleted', 503);
   }
+  await cleanupFiles(prisma, [attachment], { ticketId, actorUserId: user.id, operation: 'attachment.delete' });
 }
 
 module.exports = { listAttachments, uploadAttachment, getAttachmentForDownload, deleteAttachment };

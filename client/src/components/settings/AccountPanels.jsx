@@ -6,26 +6,26 @@ import { settingsApi } from '../../api/settings.api';
 import { protectedQueryKeys } from '../../query/protectedCache';
 import { formatDate } from '../../utils/format';
 import Input from '../ui/Input';
-import Select from '../ui/Select';
+import DepartmentPicker from './DepartmentPicker';
 import Button from '../ui/Button';
-const departments = ['Human Resources', 'Information Technology', 'Finance', 'Accounting', 'Operations', 'Administration', 'Marketing', 'Sales', 'Customer Support', 'Procurement', 'Engineering', 'Legal', 'Executive'];
 export function AccountFacts({ user }) {
   return <dl className="grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Email</dt><dd className="break-all">{user.email}</dd></div><div><dt className="text-slate-500">Role</dt><dd><span className="badge bg-slate-100 text-slate-700">{user.role}</span></dd></div><div><dt className="text-slate-500">Account status</dt><dd>{user.isActive === false ? 'Inactive' : 'Active'}</dd></div><div><dt className="text-slate-500">Email verification</dt><dd>{user.emailVerified ? 'Verified' : 'Unverified'}</dd></div>{user.createdAt && <div><dt className="text-slate-500">Member since</dt><dd>{formatDate(user.createdAt)}</dd></div>}</dl>;
 }
 export function ProfilePanel({ onDirtyChange }) {
   const { user, role, updateUser } = useAuth(); const client = useQueryClient();
   const query = useQuery({ queryKey: ['protected', user.id, role, 'settings-profile'], queryFn: ({ signal }) => settingsApi.me(signal), retry: false });
-  const [baseline, setBaseline] = useState(user); const [name, setName] = useState(user.name || ''); const [department, setDepartment] = useState(user.department || '');
-  const [custom, setCustom] = useState(Boolean(user.department && !departments.includes(user.department))); const [busy, setBusy] = useState(false); const [feedback, setFeedback] = useState(null);
+  const [baseline, setBaseline] = useState(user); const [name, setName] = useState(user.name || ''); const [department, setDepartment] = useState(user.departmentId || null);
+  const [busy, setBusy] = useState(false); const [feedback, setFeedback] = useState(null);
   const active = useRef(true); const pending = useRef(false);
+  const [clearLegacy, setClearLegacy] = useState(false);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
-  const dirty = name !== (baseline.name || '') || department !== (baseline.department || '');
+  const dirty = clearLegacy || name !== (baseline.name || '') || department !== (baseline.departmentId || null);
   useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
-  const reset = (value) => { setBaseline(value); setName(value.name || ''); setDepartment(value.department || ''); setCustom(Boolean(value.department && !departments.includes(value.department))); };
+  const reset = (value) => { setBaseline(value); setName(value.name || ''); setDepartment(value.departmentId || null); setClearLegacy(false); };
   useEffect(() => { if (query.data && !dirty && !busy) reset(query.data); }, [query.data]);
   const save = async (e) => {
     e.preventDefault(); if (pending.current || !dirty) return; pending.current = true; setBusy(true); setFeedback(null);
-    try { const result = await settingsApi.updateProfile({ name: name.trim(), department: department.trim() || null });
+    try { const result = await settingsApi.updateProfile({ name: name.trim(), ...(clearLegacy || department !== (baseline.departmentId || null) ? { departmentId: department, previousDepartmentId: baseline.departmentId || null } : {}) });
       if (!active.current) return;
       await updateUser(result); reset(result);
       await client.invalidateQueries({ queryKey: protectedQueryKeys.root(user.id) });
@@ -37,9 +37,9 @@ export function ProfilePanel({ onDirtyChange }) {
     <AccountFacts user={{ ...user, ...query.data }} />
     {query.isError && <p role="alert">Profile information could not be refreshed. <Button variant="secondary" onClick={() => query.refetch()}>Retry profile</Button></p>}
     <form onSubmit={save} className="space-y-4"><Input label="Full name" minLength={2} maxLength={100} required autoComplete="name" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} />
-      <Select label="Department" value={custom ? 'Other' : department} disabled={busy} onChange={(e) => { setCustom(e.target.value === 'Other'); setDepartment(e.target.value === 'Other' ? '' : e.target.value); }}><option value="">Not specified</option>{departments.map((d) => <option key={d}>{d}</option>)}<option>Other</option></Select>
-      {custom && <Input label="Custom department" value={department} minLength={department.trim() ? 2 : undefined} maxLength={100} helperText="Optional; up to 100 characters. Blank values are not stored." disabled={busy} onChange={(e) => setDepartment(e.target.value)} />}
-      <div className="flex flex-wrap items-center gap-3"><Button type="submit" isLoading={busy} disabled={!dirty || name.trim().length < 2 || (department.trim().length === 1)}>Save profile</Button><Button type="button" variant="secondary" disabled={!dirty || busy} onClick={() => { reset(baseline); setFeedback(null); }}>Discard changes</Button>{dirty && <span className="text-sm text-amber-700">Unsaved changes</span>}</div>
+      <DepartmentPicker value={department} onChange={setDepartment} current={baseline.departmentRecord} disabled={busy} />
+      {!baseline.departmentId && baseline.department && <div className="text-sm text-amber-700"><p>Legacy department: {baseline.department}. Choose a directory entry to replace this legacy value.</p><Button type="button" variant="secondary" disabled={busy} onClick={() => { setDepartment(null); setClearLegacy(true); }}>Clear legacy department</Button></div>}
+      <div className="flex flex-wrap items-center gap-3"><Button type="submit" isLoading={busy} disabled={!dirty || name.trim().length < 2}>Save profile</Button><Button type="button" variant="secondary" disabled={!dirty || busy} onClick={() => { reset(baseline); setFeedback(null); }}>Discard changes</Button>{dirty && <span className="text-sm text-amber-700">Unsaved changes</span>}</div>
       {feedback && <p role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
     </form></section>;
 }

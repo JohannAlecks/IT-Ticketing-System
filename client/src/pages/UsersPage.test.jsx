@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import UsersPage, { readUserFilters } from './UsersPage';
 afterEach(cleanup);
+vi.mock('../hooks/useDepartments', () => ({ useDepartments: () => ({ data: { departments: [], pagination: { totalPages: 1 } } }) }));
 const queryState = vi.hoisted(() => ({ params: null }));
 
 vi.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin-1' }, role: 'ADMIN' }) }));

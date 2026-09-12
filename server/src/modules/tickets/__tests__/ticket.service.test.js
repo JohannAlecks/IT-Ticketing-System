@@ -28,6 +28,7 @@ jest.mock('../../../config/prisma', () => ({
   notification: { createMany: jest.fn() },
   notificationPreference: { findMany: jest.fn() },
   ticketWatcher: { findMany: jest.fn() },
+  ticketAttachment: { findMany: jest.fn() },
   ticketHistory: {
     create: jest.fn(),
     createMany: jest.fn(),
@@ -37,9 +38,15 @@ jest.mock('../../../config/prisma', () => ({
   ticketResolutionCycle: { create: jest.fn() },
   $transaction: jest.fn(async (cb) => cb(mockPrisma)),
 }));
+jest.mock('../../attachments/attachment.storage', () => {
+  const actual = jest.requireActual('../../attachments/attachment.storage');
+  const fs = require('fs'); const path = require('path'); const os = require('os');
+  return { ...actual, store: actual.createStore(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-attachment-test-'))) };
+});
 
 const mockPrisma = require('../../../config/prisma');
 const fs = require('fs');
+const { store: attachmentStore } = require('../../attachments/attachment.storage');
 const ticketService = require('../ticket.service');
 const { listQuerySchema, archiveActionSchema, updateTicketSchema } = require('../ticket.schema');
 
@@ -67,6 +74,7 @@ beforeEach(() => {
   mockPrisma.user.findMany.mockResolvedValue([]);
   mockPrisma.notificationPreference.findMany.mockResolvedValue([]);
   mockPrisma.ticketWatcher.findMany.mockResolvedValue([]);
+  mockPrisma.ticketAttachment.findMany.mockResolvedValue([]);
   mockPrisma.notification.createMany.mockResolvedValue({ count: 0 });
 });
 
@@ -463,14 +471,22 @@ describe('category filters', () => {
   });
 });
 
+afterAll(() => {
+  const path = require('path');
+  if (path.dirname(attachmentStore.root) !== fs.realpathSync(require('os').tmpdir()) || !path.basename(attachmentStore.root).startsWith('ticketing-attachment-test-') || fs.lstatSync(attachmentStore.root).isSymbolicLink()) throw new Error('Unsafe fixture root');
+  fs.rmSync(attachmentStore.root, { recursive: true, force: true });
+  expect(fs.existsSync(attachmentStore.root)).toBe(false);
+});
+
 describe('deleteTicket attachment cleanup', () => {
-  const ATTACHMENT = { id: 'attachment-1', storagePath: 'delete-ticket-test.txt', originalFileName: 'delete-ticket-test.txt' };
+  const ATTACHMENT = { id: 'attachment-1', storagePath: '00000000-0000-4000-8000-000000000002.txt', originalFileName: 'delete-ticket-test.txt' };
 
   beforeEach(() => {
     mockPrisma.ticket.findUnique.mockResolvedValue({ ...baseTicket(), attachments: [ATTACHMENT] });
     mockPrisma.ticket.delete.mockResolvedValue(baseTicket());
     mockPrisma.auditEvent.create.mockResolvedValue({ id: 'audit-1' });
-    jest.spyOn(fs.promises, 'unlink').mockResolvedValue();
+    fs.writeFileSync(attachmentStore.resolve(ATTACHMENT.storagePath), 'synthetic attachment');
+    jest.spyOn(fs.promises, 'unlink');
   });
 
   afterEach(() => jest.restoreAllMocks());
@@ -496,7 +512,7 @@ describe('deleteTicket attachment cleanup', () => {
 
   test('reports and audits cleanup failures after the ticket is deleted', async () => {
     fs.promises.unlink.mockRejectedValue(Object.assign(new Error('access denied'), { code: 'EACCES' }));
-    await expect(ticketService.deleteTicket('ticket-1', { actorUserId: ADMIN.id, requestId: 'request-1' })).rejects.toMatchObject({ statusCode: 500 });
+    await expect(ticketService.deleteTicket('ticket-1', { actorUserId: ADMIN.id, requestId: 'request-1' })).rejects.toMatchObject({ statusCode: 503 });
     expect(mockPrisma.auditEvent.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ eventType: 'attachment.cleanup_failed', entityId: ATTACHMENT.id }),
     }));

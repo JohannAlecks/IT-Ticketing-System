@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt');
+const { departmentSelect, exposeDepartment } = require('../departments/department.projection');
 const prisma = require('../../config/prisma');
 const AppError = require('../../utils/AppError');
 const { writeNotifications, eventEntry } = require('../notifications/notification.service');
@@ -12,7 +13,7 @@ const SAFE_SELECT = {
   role: true,
   isActive: true,
   emailVerified: true,
-  department: true,
+  ...departmentSelect,
   createdAt: true,
 };
 
@@ -23,26 +24,26 @@ const ASSIGNMENT_CANDIDATE_SELECT = {
 };
 
 const operational = { archivedAt: null, status: { notIn: ['RESOLVED', 'CLOSED'] } };
-async function listUsers({ role, status = 'ACTIVE', search, department, missingDepartment, verification, sort = 'newest', page = 1, limit = 20 } = {}) {
+async function listUsers({ role, status = 'ACTIVE', search, departmentId, missingDepartment, verification, sort = 'newest', page = 1, limit = 20 } = {}) {
   const where = {
     ...(role ? { role } : {}),
     ...(status === 'ALL' ? {} : { isActive: status === 'ACTIVE' }),
     ...(search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { email: { contains: search, mode: 'insensitive' } }] } : {}),
-    ...(department ? { department } : {}),
-    ...(missingDepartment === 'true' ? { AND: [{ OR: [{ department: null }, { department: '' }] }] } : {}),
+    ...(departmentId ? { departmentId } : {}),
+    ...(missingDepartment === 'true' ? { AND: [{ departmentId: null }] } : {}),
     ...(verification ? { emailVerified: verification === 'VERIFIED' } : {}),
   };
-  const order = { name: { name: 'asc' }, newest: { createdAt: 'desc' }, oldest: { createdAt: 'asc' }, role: { role: 'asc' }, department: { department: 'asc' } }[sort];
+  const order = { name: { name: 'asc' }, newest: { createdAt: 'desc' }, oldest: { createdAt: 'asc' }, role: { role: 'asc' }, department: { departmentRecord: { name: 'asc' } } }[sort];
   const [rows, total] = await Promise.all([prisma.user.findMany({
     where,
     select: { ...SAFE_SELECT, _count: { select: { ticketsAssigned: { where: operational } } } },
     orderBy: [order, { id: 'asc' }], skip: (page - 1) * limit, take: limit,
   }), prisma.user.count({ where })]);
-  return { users: rows.map(({ _count, ...user }) => ({ ...user, activeWorkload: _count?.ticketsAssigned || 0 })), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return { users: rows.map(({ _count, ...user }) => ({ ...exposeDepartment(user), activeWorkload: _count?.ticketsAssigned || 0 })), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
 }
 
 async function userSummary() {
-  const filters = { total: {}, active: { isActive: true }, inactive: { isActive: false }, admins: { role: 'ADMIN' }, agents: { role: 'AGENT' }, users: { role: 'USER' }, unverified: { emailVerified: false }, withoutDepartment: { OR: [{ department: null }, { department: '' }] } };
+  const filters = { total: {}, active: { isActive: true }, inactive: { isActive: false }, admins: { role: 'ADMIN' }, agents: { role: 'AGENT' }, users: { role: 'USER' }, unverified: { emailVerified: false }, withoutDepartment: { departmentId: null } };
   return Object.fromEntries(await Promise.all(Object.entries(filters).map(async ([key, where]) => [key, await prisma.user.count({ where })])));
 }
 
@@ -73,7 +74,7 @@ async function listAgents() {
 async function getUserById(id) {
   const user = await prisma.user.findUnique({ where: { id }, select: SAFE_SELECT });
   if (!user) throw new AppError('User not found', 404);
-  return user;
+  return exposeDepartment(user);
 }
 
 // Admin-only: create a user directly with a specific role (e.g. an Agent)
@@ -219,7 +220,7 @@ async function changeUserLifecycle(id, change, actor, requestId) {
       });
     }
 
-    return { user, unassignedTickets };
+    return { user: exposeDepartment(user), unassignedTickets };
   }, { isolationLevel: 'ReadCommitted' });
 }
 

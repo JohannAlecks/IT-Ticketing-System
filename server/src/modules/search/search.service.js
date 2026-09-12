@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { departmentSelect, departmentName } = require('../departments/department.projection');
 const AppError = require('../../utils/AppError');
 const authorize = require('../../middleware/authorize');
 const { buildTicketVisibilityFilter } = require('../tickets/ticket.access');
@@ -13,7 +14,7 @@ const text = (value, max = 200) => String(value || '').replace(/<[^>]*>/g, '').r
 const personName = { select: { name: true } };
 const ticketSelect = { id: true, title: true, status: true, category: true, archivedAt: true, updatedAt: true, createdBy: personName, assignedTo: personName };
 const knowledgeSelect = { id: true, slug: true, title: true, summary: true, ticketCategory: true, publishedAt: true, updatedAt: true };
-const userSelect = { id: true, name: true, email: true, department: true, role: true, isActive: true, updatedAt: true };
+const userSelect = { id: true, name: true, email: true, ...departmentSelect, role: true, isActive: true, updatedAt: true };
 function ticketWhere(user, { q, includeArchived }) {
   const identifier = q.replace(/^#/, '');
   return { AND: [buildTicketVisibilityFilter(user), includeArchived ? {} : { archivedAt: null }, { OR: [
@@ -31,7 +32,7 @@ function knowledgeWhere(user, { q }) {
 function userWhere(user, { q }) {
   directoryAccess({ user }, null, () => {});
   const status = q.toLowerCase();
-  return { OR: [{ name: contains(q) }, { email: contains(q) }, { department: contains(q) }, { role: { in: enums(Role, q) } },
+  return { OR: [{ name: contains(q) }, { email: contains(q) }, { departmentRecord: { name: contains(q) } }, { departmentId: null, department: contains(q) }, { role: { in: enums(Role, q) } },
     ...(['active', 'inactive'].includes(status) ? [{ isActive: status === 'active' }] : [])] };
 }
 const ticketResult = (row) => ({ id: row.id, type: 'ticket', title: text(row.title),
@@ -43,7 +44,7 @@ const knowledgeResult = (row) => ({ id: row.id, type: 'knowledge', title: text(r
   metadata: { category: row.ticketCategory, publishedAt: row.publishedAt, published: true } });
 const userResult = (row) => ({ id: row.id, type: 'user', title: text(row.name, 100), subtitle: text(row.email, 254),
   path: `/users?status=ALL#user-${encodeURIComponent(row.id)}`, updatedAt: row.updatedAt,
-  metadata: { department: text(row.department, 100), role: row.role, active: row.isActive } });
+  metadata: { department: text(departmentName(row), 100), role: row.role, active: row.isActive } });
 async function search(user, query, mode = 'quick') {
   try {
     // Do not trust a token's role, previous response, or caller-supplied account.

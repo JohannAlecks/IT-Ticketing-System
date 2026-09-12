@@ -287,13 +287,13 @@ describeDb(`user lifecycle routes (${skipReason})`, () => {
     expect(await prisma.ticketHistory.count({ where: { ticketId: ticket.id } })).toBe(0);
     expect(await prisma.ticketWatcher.count({ where: { userId: target.id, ticketId: ticket.id } })).toBe(1);
   });
-  test('profile API normalizes department and rejects privileged fields without mutation', async () => {
+  test('profile API normalizes name, clears membership explicitly and rejects legacy/privileged fields', async () => {
     const target = await createUser(); const token = signToken({ sub: target.id, role: target.role });
-    const result = await request('/settings/me', { token, body: { name: ' Updated Name ', department: ' Custom Team ' } });
-    expect(result.status).toBe(200); expect(result.body.data.user).toMatchObject({ name: 'Updated Name', department: 'Custom Team', role: 'USER' });
-    expect((await request('/settings/me', { token, body: { name: 'Safe', department: null, role: 'ADMIN' } })).status).toBe(422);
+    const result = await request('/settings/me', { token, body: { name: ' Updated Name ', departmentId: null, previousDepartmentId: null } });
+    expect(result.status).toBe(200); expect(result.body.data.user).toMatchObject({ name: 'Updated Name', department: null, role: 'USER' });
+    expect((await request('/settings/me', { token, body: { name: 'Safe', departmentId: null, previousDepartmentId: null, role: 'ADMIN' } })).status).toBe(422);
     expect((await prisma.user.findUnique({ where: { id: target.id } })).role).toBe('USER');
-    expect((await request('/settings/me', { token, body: { name: 'Safe', department: ' ' } })).body.data.user.department).toBeNull();
+    expect((await request('/settings/me', { token, body: { name: 'Safe', department: 'Free text' } })).status).toBe(422);
   });
   test('13. assignment candidates are staff-only and expose only assignment fields', async () => {
     const requester = await createUser({ role: 'USER' });

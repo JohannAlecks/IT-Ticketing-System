@@ -1,0 +1,14 @@
+const { z } = require('zod');
+const name = z.string().trim().min(2).max(100).refine((v) => !/[\x00-\x1f\x7f]/.test(v), 'Control characters are not allowed');
+const version = z.number().int().min(1).max(2147483646);
+const page = z.coerce.number().int().min(1).max(100000).default(1);
+const limit = z.coerce.number().int().min(1).max(50).default(20);
+const create = z.object({ name, description: z.string().trim().max(500).nullable().optional().transform((v) => v || null) }).strict();
+const update = create.extend({ version }).strict();
+const status = z.object({ version, isActive: z.boolean() }).strict();
+const merge = z.object({ version, targetId: z.string().uuid(), targetVersion: version }).strict();
+const list = z.object({ search: z.string().trim().max(100).optional(), status: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).default('ACTIVE'), page, limit }).strict();
+const options = z.object({ search: z.string().trim().max(100).optional(), page, limit }).strict();
+const members = z.object({ page, limit }).strict();
+const assign = z.object({ departmentId: z.string().uuid().nullable(), previousDepartmentId: z.string().uuid().nullable() }).strict();
+module.exports = { create, update, status, merge, list, options, members, assign };

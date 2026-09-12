@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
-const fs = require('fs');
+const { store, UPLOAD_ROOT } = require('../modules/attachments/attachment.storage');
 const AppError = require('../utils/AppError');
 const env = require('../config/env');
 
@@ -37,38 +37,24 @@ const CONFIGURED_MIME_TYPES = env.ALLOWED_ATTACHMENT_MIME_TYPES
 // were misconfigured, these extensions are always rejected outright.
 const BLOCKED_EXTENSIONS = ['.exe', '.bat', '.cmd', '.ps1', '.sh', '.msi', '.dll', '.js', '.jar', '.app'];
 
-const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'uploads');
-if (!fs.existsSync(UPLOAD_ROOT)) {
-  fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
-}
-
-const CANONICAL_UPLOAD_ROOT = path.resolve(UPLOAD_ROOT);
-
-function resolveUploadPath(storagePath) {
-  if (typeof storagePath !== 'string' || !storagePath) {
-    throw new AppError('Invalid attachment path', 400);
-  }
-
-  const absolutePath = path.resolve(CANONICAL_UPLOAD_ROOT, storagePath);
-  const relativePath = path.relative(CANONICAL_UPLOAD_ROOT, absolutePath);
-  if (!relativePath || path.isAbsolute(relativePath) || relativePath === '..' || relativePath.startsWith(`..${path.sep}`)) {
-    throw new AppError('Invalid attachment path', 400);
-  }
-
-  return absolutePath;
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_ROOT),
-  filename: (req, file, cb) => {
+const storage = {
+  _handleFile: (req, file, cb) => {
     // Random filename on disk — the original filename is preserved only in
     // the DB record, never used to build a path (blocks path traversal via
     // a crafted filename like "../../etc/passwd").
     const randomName = crypto.randomUUID();
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${randomName}${ext}`);
+    const filename = `${randomName}${ext}`;
+    store.saveStream(filename, file.stream).then(
+      (size) => cb(null, { destination: UPLOAD_ROOT, filename, path: store.resolve(filename), size }),
+      (error) => cb(error),
+    );
   },
-});
+  _removeFile: (req, file, cb) => {
+    // Multer invokes this only for this request's unpublished exclusive file.
+    Promise.resolve().then(() => store.remove(store.uploadedName(file.path))).then(() => cb(null), () => cb(new AppError('Upload storage cleanup is incomplete; operator recovery is required', 503)));
+  },
+};
 
 function fileFilter(req, file, cb) {
   const ext = path.extname(file.originalname).toLowerCase();
@@ -102,18 +88,19 @@ function uploadSingleFile(fieldName) {
   return (req, res, next) => {
     handler(req, res, (err) => {
       if (!err) return next();
+      if (err.storageErrors?.length) return next(new AppError('Upload storage cleanup is incomplete; operator recovery is required', 503));
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         return next(new AppError(`File is too large. Maximum file size is ${env.MAX_ATTACHMENT_SIZE_MB} MB.`, 413));
       }
-      return next(err);
+      return next(err instanceof AppError ? err : new AppError('Upload could not be completed', 503));
     });
   };
 }
 
 module.exports = {
   uploadSingleFile,
-  UPLOAD_ROOT: CANONICAL_UPLOAD_ROOT,
-  resolveUploadPath,
+  UPLOAD_ROOT,
+  resolveUploadPath: store.resolve,
   MAX_FILE_SIZE_BYTES,
   ALLOWED_TYPES,
 };

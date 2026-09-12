@@ -66,7 +66,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
         <NavLink to="/get-started" className={linkClass}><Sparkles className="h-[18px] w-[18px]" /> Get started</NavLink>
 
         {role === 'ADMIN' && (
-          <><p className="eyebrow px-3 pb-2 pt-5">Administration</p><NavLink to="/users" className={linkClass}><Users className="h-[18px] w-[18px]" /> Users</NavLink><NavLink to="/audit-log" className={linkClass}><ScrollText className="h-[18px] w-[18px]" /> Audit log</NavLink></>
+          <><p className="eyebrow px-3 pb-2 pt-5">Administration</p><NavLink to="/users" className={linkClass}><Users className="h-[18px] w-[18px]" /> Users</NavLink><NavLink to="/departments" className={linkClass}><Users className="h-[18px] w-[18px]" /> Departments</NavLink><NavLink to="/email-logs" className={linkClass}><ScrollText className="h-[18px] w-[18px]" /> Email logs</NavLink><NavLink to="/audit-log" className={linkClass}><ScrollText className="h-[18px] w-[18px]" /> Audit log</NavLink></>
         )}
 
         <ShortcutSidebar onClose={onClose} />

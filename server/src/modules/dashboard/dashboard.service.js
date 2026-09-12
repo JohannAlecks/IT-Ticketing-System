@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { departmentSelect, departmentName } = require('../departments/department.projection');
 const env = require('../../config/env');
 const { slaFilterWhere, snapshotSelect, staffPayload, requesterPayload, SLA_HISTORY_DESCRIPTIONS } = require('../sla/sla.engine');
 
@@ -145,10 +146,10 @@ async function getAdminSummary(user, cutoff, generatedAt) {
   // workload query independent of inactive agents.
   const relatedUsers = await prisma.user.findMany({
     where: { OR: [{ id: { in: requesterIds } }, { role: 'AGENT', isActive: true }] },
-    select: { id: true, name: true, department: true, role: true, isActive: true },
+    select: { id: true, name: true, ...departmentSelect, role: true, isActive: true },
     orderBy: { name: 'asc' },
   });
-  const departmentsByUserId = new Map(relatedUsers.map((requester) => [requester.id, requester.department]));
+  const departmentsByUserId = new Map(relatedUsers.map((requester) => [requester.id, departmentName(requester)]));
   const agents = relatedUsers
     .filter((candidate) => candidate.role === 'AGENT' && candidate.isActive)
     .map(({ id, name }) => ({ id, name }));

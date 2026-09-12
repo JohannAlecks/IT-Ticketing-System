@@ -96,7 +96,7 @@ test('Admin ticket predicates combine authorized agent and requester department 
     where: {
       AND: [
         { archivedAt: null }, {}, { status: 'PENDING' }, { category: 'SERVER_SYSTEM' }, { priority: 'URGENT' }, { isWorkBlocking: false },
-        { assignedToId: OTHER_AGENT }, { createdBy: { department: 'Operations' } },
+        { assignedToId: OTHER_AGENT }, { createdBy: { OR: [{ departmentRecord: { name: 'Operations' } }, { departmentId: null, department: 'Operations' }] } },
         { createdAt: { gte: new Date('2026-08-01T00:00:00.000Z'), lt: new Date('2026-08-31T00:00:00.000Z') } },
       ],
     },
