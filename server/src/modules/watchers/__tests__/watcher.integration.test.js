@@ -1,13 +1,8 @@
 // Explicit opt-in only AFTER separately approved deployment. Cleanup is limited
 // to IDs generated here; this suite never migrates or touches existing tickets.
 const { randomUUID } = require('crypto');
-const enabled = process.env.RUN_WATCHER_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const target = new URL(process.env.DATABASE_URL);
-  if (target.hostname !== 'localhost' || (target.port || '5432') !== '5432' || target.pathname !== '/ticketing_db' || (target.searchParams.get('schema') || 'public') !== 'public') throw new Error('Watcher database target mismatch (redacted)');
-  process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 (enabled ? describe : describe.skip)('watchers local database and concurrency', () => {
   const db = require('../../../config/prisma');
   const { watching, notifyTicketWatchers } = require('../watcher.service');

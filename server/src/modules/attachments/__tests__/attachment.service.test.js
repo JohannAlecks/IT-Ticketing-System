@@ -9,13 +9,15 @@ jest.mock('../../../config/prisma', () => ({
 jest.mock('../attachment.storage', () => {
   const actual = jest.requireActual('../attachment.storage');
   const fs = require('fs'); const path = require('path'); const os = require('os');
-  return { ...actual, store: actual.createStore(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-attachment-test-'))) };
+  return { ...actual, store: actual.createStore(path.join(fs.realpathSync(os.tmpdir()), `ticketing-attachment-test-${require('crypto').randomUUID()}`)) };
 });
 
 const fs = require('fs');
 const mockPrisma = require('../../../config/prisma');
 const attachmentService = require('../attachment.service');
 const { store } = require('../attachment.storage');
+let fixtureCreated = false;
+beforeAll(() => { fs.mkdirSync(store.root); fixtureCreated = true; });
 
 const USER = { id: 'user-1', name: 'Uma User', role: 'USER' };
 const TICKET = { id: 'ticket-1', createdById: USER.id, assignedToId: null };
@@ -41,6 +43,7 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 afterAll(() => {
+  if (!fixtureCreated) return;
   const path = require('path');
   if (path.dirname(store.root) !== fs.realpathSync(require('os').tmpdir()) || !path.basename(store.root).startsWith('ticketing-attachment-test-') || fs.lstatSync(store.root).isSymbolicLink()) throw new Error('Unsafe fixture root');
   fs.rmSync(store.root, { recursive: true, force: true });

@@ -1,13 +1,8 @@
 // Explicit opt-in AFTER migration approval. Only this suite's UUID fixtures
 // may be removed. No migration, reset, email, or existing-ticket mutation.
 const { randomUUID } = require('crypto');
-const enabled = process.env.RUN_PERSONAL_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const target = new URL(process.env.DATABASE_URL);
-  if (target.hostname !== 'localhost' || (target.port || '5432') !== '5432' || target.pathname !== '/ticketing_db' || (target.searchParams.get('schema') || 'public') !== 'public') throw new Error('Personal preferences database target mismatch (redacted)');
-  process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 (enabled ? describe : describe.skip)('personal preferences local database and concurrency', () => {
   const db = require('../../../config/prisma');
   const service = require('../personal.service');
@@ -127,14 +122,17 @@ if (enabled) {
     });
     // Prisma 5 may resolve despite PostgreSQL rejecting COMMIT. Verify the
     // actual persisted row, independent of that client's promise behavior.
+    let commitError;
     await db.$transaction(async (tx) => {
       await tx.userShortcut.update({ where: { id: row.id }, data: { position: 8 } });
-    }).catch(() => {});
+    }).catch((error) => { commitError = error; });
+    const { isNamedCheck, expectNamedCheck } = require('../../../../testUtils/constraintFailure');
+    if (commitError) expect(isNamedCheck(commitError, 'user_shortcuts_committed_position')).toBe(true);
     expect((await db.userShortcut.findUnique({ where: { id: row.id } })).position).toBe(0);
-    await expect(db.$transaction(async (tx) => {
+    await expectNamedCheck(db.$transaction(async (tx) => {
       await tx.userShortcut.update({ where: { id: row.id }, data: { position: 8 } });
       await tx.$executeRaw`SET CONSTRAINTS user_shortcuts_committed_position IMMEDIATE`;
-    })).rejects.toBeTruthy();
+    }), 'user_shortcuts_committed_position');
     expect((await db.userShortcut.findUnique({ where: { id: row.id } })).position).toBe(0);
     await expect(db.$transaction(async (tx) => {
       await tx.userShortcut.update({ where: { id: row.id }, data: { position: 9 } });

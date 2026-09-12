@@ -4,27 +4,13 @@
  * They require an explicitly supplied DATABASE_URL so ordinary unit-test runs
  * cannot accidentally target a developer's local database.
  */
-const DEFAULT_JEST_DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
-// jest.setup supplies a harmless fallback before modules load. Replace only
-// that fallback with this server's normal local configuration; an explicitly
-// supplied CI DATABASE_URL always wins.
-if (process.env.DATABASE_URL === DEFAULT_JEST_DATABASE_URL) {
-  require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-}
-const hasExplicitDatabaseUrl = process.env.DATABASE_URL && process.env.DATABASE_URL !== DEFAULT_JEST_DATABASE_URL;
-
-if (!hasExplicitDatabaseUrl) {
-  // Jest cannot mark tests skipped after an async connection check. Keeping a
-  // single explicit message makes the omission visible in local and CI logs.
-  console.warn('[ticket-integrity-db] SKIPPED: set DATABASE_URL explicitly to run database-backed integrity tests.');
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
 
 const prisma = require('../../../config/prisma');
 const ticketService = require('../ticket.service');
 
 const createdTicketIds = new Set();
 const createdUserIds = new Set();
-let databaseAvailable = hasExplicitDatabaseUrl;
 let sequence = 0;
 let ticketReadBarrier = null;
 
@@ -33,18 +19,24 @@ let ticketReadBarrier = null;
 // after the first commit, which tests authorization rather than a stale write.
 prisma.$use(async (params, next) => {
   if (ticketReadBarrier && params.model === 'Ticket' && ['findUnique', 'findFirst'].includes(params.action)) {
-    ticketReadBarrier.reads += 1;
-    if (ticketReadBarrier.reads === ticketReadBarrier.target) ticketReadBarrier.release();
-    await ticketReadBarrier.ready;
+    const barrier = ticketReadBarrier;
+    const row = await next(params);
+    barrier.reads += 1;
+    if (barrier.reads === barrier.target) barrier.release();
+    await barrier.ready;
+    return row;
   }
   return next(params);
 });
 
 function holdTicketReads(target) {
-  let release;
-  const ready = new Promise((resolve) => { release = resolve; });
+  let release, timer;
+  const ready = new Promise((resolve, reject) => {
+    release = () => { clearTimeout(timer); resolve(); };
+    timer = setTimeout(() => reject(new Error('Synthetic ticket read barrier timed out')), 3000);
+  });
   ticketReadBarrier = { target, reads: 0, ready, release };
-  return () => { ticketReadBarrier = null; };
+  return () => { release(); ticketReadBarrier = null; };
 }
 
 function unique(label) {
@@ -76,32 +68,18 @@ async function createTicket(createdBy, assignedToId = null, status = 'OPEN') {
 }
 
 async function runIfDatabaseAvailable(callback) {
-  if (!databaseAvailable) return;
   return callback();
 }
 
 beforeAll(async () => {
-  if (!databaseAvailable) return;
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    const notificationTable = await prisma.$queryRaw`SELECT to_regclass('public.notifications')::text AS "table"`;
-    const archiveColumn = await prisma.$queryRaw`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tickets' AND column_name = 'archivedAt') AS "exists"`;
-    if (!notificationTable[0]?.table || !archiveColumn[0]?.exists) {
-      databaseAvailable = false;
-      console.warn('[ticket-integrity-db] SKIPPED: apply the notifications and ticket-archiving migrations before running database-backed integrity tests.');
-    }
-  } catch (error) {
-    databaseAvailable = false;
-    console.warn(`[ticket-integrity-db] SKIPPED: database unavailable (${error.code || error.name}).`);
-  }
+  if (enabled) await prisma.$connect();
 });
 
 afterEach(async () => {
-  if (!databaseAvailable) return;
+  if (!enabled) return;
+  ticketReadBarrier?.release(); ticketReadBarrier = null;
   const ticketIds = [...createdTicketIds];
   const userIds = [...createdUserIds];
-  createdTicketIds.clear();
-  createdUserIds.clear();
   if (userIds.length) {
     await prisma.notification.deleteMany({
       where: { OR: [{ recipientId: { in: userIds } }, { actorId: { in: userIds } }] },
@@ -110,11 +88,16 @@ afterEach(async () => {
   if (ticketIds.length) await prisma.ticket.deleteMany({ where: { id: { in: ticketIds } } });
   if (ticketIds.length) await prisma.auditEvent.deleteMany({ where: { entityType: 'ticket', entityId: { in: ticketIds } } });
   if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+  expect(await prisma.ticket.count({ where: { id: { in: ticketIds } } })).toBe(0);
+  expect(await prisma.user.count({ where: { id: { in: userIds } } })).toBe(0);
+  expect(await prisma.notification.count({ where: { recipientId: { in: userIds } } })).toBe(0);
+  expect(await prisma.auditEvent.count({ where: { entityId: { in: ticketIds } } })).toBe(0);
+  createdTicketIds.clear(); createdUserIds.clear();
 });
 
 afterAll(async () => prisma.$disconnect());
 
-describe('database-backed ticket integrity', () => {
+describeDb('database-backed ticket integrity', () => {
   test('two concurrent claims produce one success, one 409, and one assignment history row', async () => runIfDatabaseAvailable(async () => {
     const requester = await createUser('USER', 'requester');
     const agentA = await createUser('AGENT', 'agent-a');
@@ -130,16 +113,20 @@ describe('database-backed ticket integrity', () => {
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((result) => result.status === 'rejected');
     expect(rejected.reason).toMatchObject({ statusCode: 409 });
+    const winner = results.find((result) => result.status === 'fulfilled').value;
+    expect((await prisma.ticket.findUnique({ where: { id: ticket.id } })).assignedToId).toBe(winner.assignedToId);
     expect(await prisma.ticketHistory.count({ where: { ticketId: ticket.id, action: 'ASSIGNED' } })).toBe(1);
   }));
 
   test('a stale priority-vs-close operation is rejected', async () => runIfDatabaseAvailable(async () => {
     const admin = await createUser('ADMIN', 'admin');
     const ticket = await createTicket(admin, null, 'RESOLVED');
+    const releaseBarrier = holdTicketReads(2);
     const results = await Promise.allSettled([
       ticketService.updateTicket(ticket.id, { priority: 'HIGH' }, admin),
       ticketService.updateTicket(ticket.id, { status: 'CLOSED' }, admin),
     ]);
+    releaseBarrier();
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((result) => result.status === 'rejected').reason).toMatchObject({ statusCode: 409 });
   }));
@@ -150,10 +137,12 @@ describe('database-backed ticket integrity', () => {
     const agentA = await createUser('AGENT', 'agent-a');
     const agentB = await createUser('AGENT', 'agent-b');
     const ticket = await createTicket(requester, agentA.id);
+    const releaseBarrier = holdTicketReads(2);
     const results = await Promise.allSettled([
       ticketService.assignTicket(ticket.id, null, admin),
       ticketService.assignTicket(ticket.id, agentB.id, admin),
     ]);
+    releaseBarrier();
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(results.find((result) => result.status === 'rejected').reason).toMatchObject({ statusCode: 409 });
   }));
@@ -185,7 +174,7 @@ describe('database-backed ticket integrity', () => {
     ]);
     // The barrier is released only after both archive transactions have read
     // the same scoped row, forcing the conditional archive write to arbitrate.
-    while (ticketReadBarrier?.reads < 2) await new Promise((resolve) => setImmediate(resolve));
+    await ticketReadBarrier.ready;
     releaseBarrier();
     const results = await resultsPromise;
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -196,5 +185,15 @@ describe('database-backed ticket integrity', () => {
     const archived = await prisma.ticket.findUnique({ where: { id: ticket.id } });
     expect(archived).toMatchObject({ status: 'RESOLVED', assignedToId: agent.id });
     expect(archived.archivedAt).toBeInstanceOf(Date);
+  }));
+  test('only Admin restores archived tickets and prior status/assignment are preserved', async () => runIfDatabaseAvailable(async () => {
+    const requester = await createUser('USER', 'restore-requester'); const agent = await createUser('AGENT', 'restore-agent'); const admin = await createUser('ADMIN', 'restore-admin');
+    const ticket = await createTicket(requester, agent.id, 'CLOSED');
+    await ticketService.archiveTicket(ticket.id, agent);
+    await expect(ticketService.restoreTicket(ticket.id, agent)).rejects.toMatchObject({ statusCode: 403 });
+    expect((await prisma.ticket.findUnique({ where: { id: ticket.id } })).archivedAt).not.toBeNull();
+    await ticketService.restoreTicket(ticket.id, admin);
+    expect(await prisma.ticket.findUnique({ where: { id: ticket.id } })).toMatchObject({ archivedAt: null, status: 'CLOSED', assignedToId: agent.id });
+    expect(await prisma.ticketHistory.count({ where: { ticketId: ticket.id, action: 'TICKET_RESTORED' } })).toBe(1);
   }));
 });

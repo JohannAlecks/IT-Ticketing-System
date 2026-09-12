@@ -5,24 +5,8 @@
  */
 const { randomUUID } = require('crypto');
 
-const DEFAULT_JEST_DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
-if (process.env.DATABASE_URL === DEFAULT_JEST_DATABASE_URL) {
-  require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-}
-
-function localDatabaseIsSafe() {
-  try {
-    const url = new URL(process.env.DATABASE_URL || '');
-    return new Set(['localhost', '127.0.0.1', '::1']).has(url.hostname) &&
-      (/test/i.test(url.pathname) || process.env.ALLOW_NON_TEST_DB_INTEGRATION === 'true');
-  } catch {
-    return false;
-  }
-}
-
-const enabled = process.env.RUN_DATABASE_INTEGRATION === 'true' || process.env.RUN_DB_INTEGRATION_TESTS === 'true';
-const describeDb = enabled && localDatabaseIsSafe() ? describe : describe.skip;
-const skipReason = 'requires RUN_DATABASE_INTEGRATION=true (or RUN_DB_INTEGRATION_TESTS=true) and a local PostgreSQL test database';
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 
 describeDb(`notification inbox integration (${skipReason})`, () => {
   const prisma = require('../../../config/prisma');
@@ -44,6 +28,10 @@ describeDb(`notification inbox integration (${skipReason})`, () => {
     if (ids.tickets.length) await prisma.ticketHistory.deleteMany({ where: { ticketId: { in: ids.tickets } } });
     if (ids.tickets.length) await prisma.ticket.deleteMany({ where: { id: { in: ids.tickets } } });
     if (ids.users.length) await prisma.user.deleteMany({ where: { id: { in: ids.users } } });
+    expect(await prisma.user.count({ where: { id: { in: ids.users } } })).toBe(0);
+    expect(await prisma.ticket.count({ where: { id: { in: ids.tickets } } })).toBe(0);
+    expect(await prisma.notification.count({ where: { OR: [{ recipientId: { in: ids.users } }, { ticketId: { in: ids.tickets } }] } })).toBe(0);
+    expect(await prisma.auditEvent.count({ where: { entityId: { in: ids.users } } })).toBe(0);
     await prisma.$disconnect();
   });
 
@@ -110,8 +98,17 @@ describeDb(`notification inbox integration (${skipReason})`, () => {
     expect(await prisma.notification.count({ where: { recipientId: optedOutAgent.id, type: 'ACCOUNT_REACTIVATED' } })).toBe(1);
     expect(await prisma.notification.count({ where: { recipientId: enabledAgent.id, type: 'TICKET_ASSIGNED' } })).toBe(1);
   });
+  test('concurrent writes deduplicate and exclude inactive recipients; read/unread remains owner-scoped', async () => {
+    const active = await user('AGENT'); const inactive = await user('AGENT', false); const outsider = await user('ADMIN');
+    const eventId = randomUUID();
+    const entries = [active, inactive].map((recipient) => notificationService.eventEntry({ recipientId: recipient.id, type: 'TICKET_ASSIGNED', title: 'Synthetic assignment', message: 'Synthetic notification', eventId }));
+    await Promise.all([notificationService.writeNotifications(prisma, { entries }), notificationService.writeNotifications(prisma, { entries })]);
+    const rows = await prisma.notification.findMany({ where: { recipientId: active.id } });
+    expect(rows).toHaveLength(1); expect(await prisma.notification.count({ where: { recipientId: inactive.id } })).toBe(0);
+    await notificationService.setReadState(active, rows[0].id, true);
+    expect((await prisma.notification.findUnique({ where: { id: rows[0].id } })).readAt).not.toBeNull();
+    await expect(notificationService.setReadState(outsider, rows[0].id, false)).rejects.toMatchObject({ statusCode: 404 });
+    await notificationService.setReadState(active, rows[0].id, false);
+    expect((await prisma.notification.findUnique({ where: { id: rows[0].id } })).readAt).toBeNull();
+  });
 });
-
-if (!(enabled && localDatabaseIsSafe())) {
-  test.skip(`notification database integration skipped: ${skipReason}`, () => {});
-}

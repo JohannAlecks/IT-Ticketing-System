@@ -6,25 +6,8 @@
 const { randomUUID } = require('crypto');
 const bcrypt = require('bcrypt');
 
-const DEFAULT_JEST_DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
-if (process.env.DATABASE_URL === DEFAULT_JEST_DATABASE_URL) {
-  require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-}
-
-const localDatabaseIsSafe = () => {
-  try {
-    const url = new URL(process.env.DATABASE_URL || '');
-    const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
-    const explicitlyAllowedLocalDatabase = process.env.ALLOW_NON_TEST_DB_INTEGRATION === 'true';
-    return localHosts.has(url.hostname) && (/test/i.test(url.pathname) || explicitlyAllowedLocalDatabase);
-  } catch {
-    return false;
-  }
-};
-
-const dbIntegrationEnabled = process.env.RUN_DB_INTEGRATION_TESTS === 'true' && localDatabaseIsSafe();
-const describeDb = dbIntegrationEnabled ? describe : describe.skip;
-const skipReason = 'requires RUN_DB_INTEGRATION_TESTS=true and a local PostgreSQL test database (or explicit ALLOW_NON_TEST_DB_INTEGRATION=true)';
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 
 describeDb(`user lifecycle routes (${skipReason})`, () => {
   const app = require('../../../app');
@@ -314,7 +297,3 @@ describeDb(`user lifecycle routes (${skipReason})`, () => {
     }
   });
 });
-
-if (!dbIntegrationEnabled) {
-  test.skip(`DB lifecycle integration skipped: ${skipReason}`, () => {});
-}

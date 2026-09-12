@@ -2,14 +2,16 @@ jest.mock('../../../config/env', () => ({ ...jest.requireActual('../../../config
 jest.mock('../attachment.storage', () => {
   const actual = jest.requireActual('../attachment.storage');
   const fs = require('fs'); const path = require('path'); const os = require('os');
-  const store = actual.createStore(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-attachment-test-')));
+  const store = actual.createStore(path.join(fs.realpathSync(os.tmpdir()), `ticketing-attachment-test-${require('crypto').randomUUID()}`));
   return { ...actual, store, UPLOAD_ROOT: store.root };
 });
 const fs = require('fs'); const path = require('path');
 const { store } = require('../attachment.storage');
 const { uploadSingleFile } = require('../../../middleware/upload');
 let server;
+let fixtureCreated = false;
 beforeAll(async () => {
+  fs.mkdirSync(store.root); fixtureCreated = true;
   const app = require('express')();
   app.post('/', uploadSingleFile('file'), (req, res) => res.json({ size: req.file.size, filename: req.file.filename }));
   app.use(require('../../../middleware/errorHandler'));
@@ -21,7 +23,8 @@ afterEach(async () => {
   for (const filename of await fs.promises.readdir(store.root)) await store.remove(filename);
 });
 afterAll(async () => {
-  await new Promise((resolve) => server.close(resolve));
+  if (server) await new Promise((resolve) => server.close(resolve));
+  if (!fixtureCreated) return;
   if (path.dirname(store.root) !== fs.realpathSync(require('os').tmpdir()) || !path.basename(store.root).startsWith('ticketing-attachment-test-') || fs.lstatSync(store.root).isSymbolicLink()) throw new Error('Unsafe fixture root');
   fs.rmSync(store.root, { recursive: true, force: true });
   expect(fs.existsSync(store.root)).toBe(false);

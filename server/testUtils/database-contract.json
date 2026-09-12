@@ -1,0 +1,23 @@
+{
+  "migrations": {
+    "20260811161059_init": "8786f0b3182294811be5f3a1321f01b85eded915f7b2f966dcc0df761c8d4232",
+    "20260814050019_add_ticket_attachments": "1ad0a7071dd728227cbbc4e138ec3140f641f443eec44263fde5c08b62e48ab6",
+    "20260814063222_add_email_verification": "bf60a2f69e92304f57e94061e168ad5877b9d999ce46c20c38b04a3829c47bae",
+    "20260825000000_add_audit_events": "8036400f9c2ac9110a3d0bebb83f84b0cf8e4dce6227dd4493d7dd34d691e14b",
+    "20260829090000_add_user_department": "0ddbaaa09cab0f887c0c9fad59b7f9b373b7d414b29a177456c82c8ac8c01466",
+    "20260829100000_migrate_ticket_categories": "c9fd16cc3fbe625fec2d8ce3b83d257ebdb3519e66dc6f2bc95a6231b406e186",
+    "20260829110000_add_ticket_work_impact": "efa39a4ada8adcd2ec858991908d83e8b1af63a90609e09fb43e08f71336eaf6",
+    "20260829120000_add_user_onboarding": "7522910d19353ba4b737c1f2eefe0b05ea52fce4d4db3b830d47544dff2de972",
+    "20260831090000_add_knowledge_base": "4a13a3a6dc1ec4a1f812c4fa161077f6ce99b56ab94dee98f20b9418eda19555",
+    "20260901000000_add_notifications": "aa666a0205e1dfbc7a74fc7013735b1061dfc2cda2aa87e711ed44352e5e1454",
+    "20260902000000_add_notification_preferences": "f0a9890b8e7bb718dbe64e73408c8855717a565fdc448b99e73d249bc7819afc",
+    "20260902010000_add_ticket_archiving": "4d6db9a27d96e512e0f9a01baf1f6e4a9a91b424e5f6e3e20ee71125ca07ea73",
+    "20260905000000_add_sla_timers_escalation": "d41117578b26d8e40d7eea0c7ee6b3dda62d1fc834dcc303cb8f55c5eee32622",
+    "20260910000000_add_ticket_satisfaction": "3fd8b442ca52a57c4cefac7fc5eaaa465b2f7b319e5a082bd14ec584e3b4b887",
+    "20260911000000_add_saved_views_shortcuts": "d2fa5630d54b0d5568dacdf959d8af7a2e8c76ce60cdc86ef0f52a0a7de85703",
+    "20260912000000_add_ticket_watchers": "c18fb0fdf0c9f0a788dc741f007e51ddebb096bd316c4ababa669e2df992a3f8",
+    "20260912010000_add_department_administration": "7107cf8fcfbd5d85493b0074ebd6ec3a3fe8e4156eafe301eef623bf6dee2f5b",
+    "20260912020000_add_email_delivery_logs": "5b5b2714066a0a696b1d2cbe6aeae9ef2064814c3c80fda12a6216de4277d71e"
+  },
+  "catalogSha256": "c0adfac86f197ba0a4a4c08ab5b085052cebf96c78e59254a16b91bb3d3a4cc0"
+}

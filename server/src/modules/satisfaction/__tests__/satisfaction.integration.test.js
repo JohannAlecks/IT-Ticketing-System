@@ -1,13 +1,8 @@
 // Opt in only after explicit migration approval. Never migrates/resets or
 // touches non-fixture tickets. Cleanup is scoped to UUIDs created by this suite.
 const { randomUUID } = require('crypto');
-const enabled = process.env.RUN_CSAT_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const url = new URL(process.env.DATABASE_URL);
-  if (url.hostname !== 'localhost' || (url.port || '5432') !== '5432' || url.pathname !== '/ticketing_db' || (url.searchParams.get('schema') || 'public') !== 'public') throw new Error('CSAT database target mismatch (redacted)');
-  process.env.SLA_SWEEP_QUIET = '1'; process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 (enabled ? describe : describe.skip)('CSAT local database integration', () => {
   const db = require('../../../config/prisma');
   const service = require('../satisfaction.service');

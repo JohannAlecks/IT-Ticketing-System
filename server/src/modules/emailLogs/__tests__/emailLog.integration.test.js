@@ -1,13 +1,8 @@
 // Opt-in only AFTER the independent Email Logs migration is approved/applied.
 // Synthetic metadata only; no mailer/provider call, historical backfill or DDL.
 const { randomUUID, createHash } = require('crypto');
-const enabled = process.env.RUN_EMAIL_LOG_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const u = new URL(process.env.DATABASE_URL);
-  if (u.hostname !== 'localhost' || (u.port || '5432') !== '5432' || u.pathname !== '/ticketing_db' || (u.searchParams.get('schema') || 'public') !== 'public') throw new Error('Email log database target mismatch (redacted)');
-  process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 jest.mock('resend', () => ({ Resend: jest.fn(() => { throw new Error('Provider calls forbidden in database tests'); }) }));
 (enabled ? describe : describe.skip)('Email log database integrity, authorization and concurrency', () => {
   const db = require('../../../config/prisma'); const service = require('../emailLog.service');

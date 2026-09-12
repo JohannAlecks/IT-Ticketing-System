@@ -2,19 +2,14 @@
 // directory; all modified/deleted rows are IDs allocated by this suite.
 const { randomUUID } = require('crypto');
 const fs = require('fs'); const path = require('path');
-const enabled = process.env.RUN_ATTACHMENT_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: path.join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const target = new URL(process.env.DATABASE_URL);
-  if (target.hostname !== 'localhost' || (target.port || '5432') !== '5432' || target.pathname !== '/ticketing_db' || (target.searchParams.get('schema') || 'public') !== 'public') throw new Error('Attachment test target mismatch (redacted)');
-  process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 jest.mock('resend', () => ({ Resend: class { constructor() { throw new Error('Provider prohibited in attachment verification'); } } }));
 jest.mock('../attachment.storage', () => {
   const actual = jest.requireActual('../attachment.storage');
-  if (process.env.RUN_ATTACHMENT_DB_TESTS !== 'true') return actual;
+  if (process.env.RUN_DB_TESTS !== 'true') return actual;
   const fs = require('fs'); const path = require('path'); const os = require('os');
-  return { ...actual, store: actual.createStore(fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-attachment-test-'))) };
+  return { ...actual, store: actual.createStore(path.join(fs.realpathSync(os.tmpdir()), `ticketing-attachment-test-${require('crypto').randomUUID()}`)) };
 });
 
 (enabled ? describe : describe.skip)('Attachment database and synthetic-storage integrity', () => {
@@ -22,7 +17,7 @@ jest.mock('../attachment.storage', () => {
   const service = require('../attachment.service'); const ticketsService = require('../../tickets/ticket.service');
   const { store } = require('../attachment.storage'); const { scanOrphans, lockStorage } = require('../attachment.cleanup');
   const users = [], tickets = [], attachments = []; const prefix = `attachment-it-${randomUUID()}`;
-  let owner, admin, outsider, failHistoryFor;
+  let owner, admin, outsider, failHistoryFor, fixtureCreated = false;
   db.$use((params, next) => {
     if (failHistoryFor && params.model === 'TicketHistory' && params.action === 'create' && params.args.data.ticketId === failHistoryFor && params.args.data.action === 'ATTACHMENT_DELETED') throw new Error('Synthetic private database failure');
     return next(params);
@@ -35,9 +30,10 @@ jest.mock('../attachment.storage', () => {
     attachments.push(row.id); return row;
   }
   const scan = (extra = {}) => scanOrphans({ prisma: db, store, now: new Date(Date.now() + 48 * 3600000), execute: true, writersStopped: true, ...extra });
-  beforeAll(async () => { owner = await user('USER'); admin = await user('ADMIN'); outsider = await user('USER'); });
+  beforeAll(async () => { fs.mkdirSync(store.root); fixtureCreated = true; owner = await user('USER'); admin = await user('ADMIN'); outsider = await user('USER'); });
   afterEach(() => { failHistoryFor = null; jest.restoreAllMocks(); });
   afterAll(async () => {
+    if (!fixtureCreated) { await db.$disconnect(); return; }
     try {
       await db.ticket.deleteMany({ where: { id: { in: tickets } } });
       await db.auditEvent.deleteMany({ where: { OR: [{ actorUserId: { in: users } }, { entityId: { in: attachments } }] } });

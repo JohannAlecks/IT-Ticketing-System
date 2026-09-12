@@ -1,19 +1,9 @@
 // Explicitly gated: never migrates, runs a whole-database sweep, or touches
 // non-fixture tickets. Run only after the SLA migration is approved/applied.
 const { randomUUID } = require('crypto');
-const enabled = process.env.RUN_SLA_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') {
-  require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-}
-function targetIsSafe() {
-  try {
-    const url = new URL(process.env.DATABASE_URL);
-    return url.hostname === 'localhost' && (url.port || '5432') === '5432' && url.pathname === '/ticketing_db' && (url.searchParams.get('schema') || 'public') === 'public';
-  } catch { return false; }
-}
-if (enabled && !targetIsSafe()) throw new Error('SLA database tests refused: target mismatch (credentials redacted)');
-const describeDb = enabled ? describe : describe.skip;
-describeDb('SLA local database integration (requires RUN_SLA_DB_TESTS=true)', () => {
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
+describeDb('SLA dedicated database integration', () => {
   const db = require('../../../config/prisma');
   const { createSnapshot, slaFilterWhere } = require('../sla.engine');
   const { evaluateTicket } = require('../sla.sweep');
@@ -101,5 +91,26 @@ describeDb('SLA local database integration (requires RUN_SLA_DB_TESTS=true)', ()
     expect(await db.ticketHistory.count({ where: { ticketId: ticket.id, description: 'SLA resolution completed' } })).toBe(1);
     const archived = await makeTicket({ status: 'RESOLVED', archivedAt: new Date() });
     expect((await evaluateTicket(archived.id)).skipped).toBe(true);
+  });
+  test('explicit waiting pauses/resumes; generic pending does not pause resolution', async () => {
+    const ticket = await makeTicket({ ...createSnapshot(policy, new Date()), createdAt: new Date() });
+    await updateTicket(ticket.id, { status: 'PENDING', pendingReason: 'OTHER' }, agent);
+    expect((await db.ticket.findUnique({ where: { id: ticket.id } })).resolutionPausedAt).toBeNull();
+    await updateTicket(ticket.id, { pendingReason: 'WAITING_FOR_REQUESTER' }, agent);
+    const paused = await db.ticket.findUnique({ where: { id: ticket.id } }); expect(paused.resolutionPausedAt).not.toBeNull();
+    await updateTicket(ticket.id, { status: 'IN_PROGRESS' }, agent);
+    const resumed = await db.ticket.findUnique({ where: { id: ticket.id } });
+    expect(resumed.resolutionPausedAt).toBeNull(); expect(resumed.pendingReason).toBeNull();
+    expect(resumed.resolutionDueAt.getTime()).toBeGreaterThanOrEqual(paused.resolutionDueAt.getTime());
+    expect(resumed.firstResponseDueAt).toEqual(paused.firstResponseDueAt);
+  });
+  test('concurrent due-soon evaluations keep distinct milestone keys and final outcomes', async () => {
+    const recipient = await makeUser('AGENT'); const ticket = await makeTicket({ assignedToId: recipient.id });
+    await Promise.all([evaluateTicket(ticket.id, new Date('2026-01-01T00:50:00Z')), evaluateTicket(ticket.id, new Date('2026-01-01T00:50:00Z'))]);
+    await Promise.all([evaluateTicket(ticket.id, new Date('2026-01-01T01:50:00Z')), evaluateTicket(ticket.id, new Date('2026-01-01T01:50:00Z'))]);
+    const rows = await db.notification.findMany({ where: { ticketId: ticket.id } });
+    expect(rows.filter((row) => ['SLA_FIRST_RESPONSE_DUE_SOON', 'SLA_RESOLUTION_DUE_SOON'].includes(row.type))).toHaveLength(2);
+    expect(new Set(rows.map((row) => row.dedupeKey)).size).toBe(rows.length);
+    expect((await db.ticket.findUnique({ where: { id: ticket.id } })).firstResponseBreachedAt).not.toBeNull();
   });
 });

@@ -1,13 +1,8 @@
 // Opt-in only after the separately approved Department migration. No DDL,
 // migration, email, reset, or cleanup outside IDs created by this suite.
 const { randomUUID, createHash } = require('crypto');
-const enabled = process.env.RUN_DEPARTMENT_DB_TESTS === 'true';
-if (enabled && process.env.DATABASE_URL === 'postgresql://test:test@localhost:5432/test_db') require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-if (enabled) {
-  const target = new URL(process.env.DATABASE_URL);
-  if (target.hostname !== 'localhost' || (target.port || '5432') !== '5432' || target.pathname !== '/ticketing_db' || (target.searchParams.get('schema') || 'public') !== 'public') throw new Error('Department test target mismatch (redacted)');
-  process.env.EMAIL_PROVIDER = 'disabled';
-}
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 (enabled ? describe : describe.skip)('Department database integrity and concurrency', () => {
   const db = require('../../../config/prisma'); const service = require('../department.service');
   const settings = require('../../settings/settings.service'); const { departmentName } = require('../department.projection');
@@ -36,20 +31,23 @@ if (enabled) {
       console.log('Department synthetic fixture cleanup: users/departments/tickets/audits=0');
     } finally { await db.$disconnect(); }
   });
-  test('backfill links valid legacy values and leaves empty values unlinked; database normalization is case-insensitive', async () => {
-    const invalid = await db.$queryRaw`SELECT count(*)::int AS count FROM users WHERE "departmentId" IS NULL AND char_length(regexp_replace(department, '^[[:space:]]+|[[:space:]]+$', '', 'g')) BETWEEN 2 AND 100 AND regexp_replace(department, '^[[:space:]]+|[[:space:]]+$', '', 'g') !~ '[[:cntrl:]]'`;
-    expect(invalid[0].count).toBe(0);
-    const blankLinks = await db.$queryRaw`SELECT count(*)::int AS count FROM users WHERE (department IS NULL OR regexp_replace(department, '^[[:space:]]+|[[:space:]]+$', '', 'g') = '') AND "departmentId" IS NOT NULL`;
-    expect(blankLinks[0].count).toBe(0);
+  test('synthetic legacy values are preserved during structured assignment; normalization is case-insensitive', async () => {
+    const member = await account(); const blank = await account(); const row = await department('Legacy mapping');
+    await db.user.update({ where: { id: member.id }, data: { department: '  Preserved legacy  ' } });
+    await service.assign(actor, member.id, { departmentId: row.id, previousDepartmentId: null });
+    expect(await db.user.findUnique({ where: { id: member.id } })).toMatchObject({ departmentId: row.id, department: '  Preserved legacy  ' });
+    expect(await db.user.findUnique({ where: { id: blank.id } })).toMatchObject({ departmentId: null, department: null });
     const rows = await db.$queryRaw`SELECT public.department_normalize('  Support  ') AS a, public.department_normalize('SUPPORT') AS b, public.department_normalize('   ') AS blank`;
     expect(rows[0]).toEqual({ a: 'support', b: 'support', blank: '' });
   });
   test('normalized duplicate rejection and database constraints', async () => {
     const row = await department('Duplicate');
     await expect(service.create(actor, { name: row.name.toUpperCase() })).rejects.toMatchObject({ statusCode: 409 });
-    await expect(db.department.update({ where: { id: row.id }, data: { normalizedName: 'wrong' } })).rejects.toBeDefined();
-    await expect(db.department.update({ where: { id: row.id }, data: { version: 0 } })).rejects.toBeDefined();
-    expect((await db.department.findUnique({ where: { id: row.id } })).version).toBe(1);
+    const { expectNamedCheck } = require('../../../../testUtils/constraintFailure');
+    const before = await db.department.findUnique({ where: { id: row.id } });
+    await expectNamedCheck(db.department.update({ where: { id: row.id }, data: { normalizedName: 'wrong' } }), 'departments_normalized_check');
+    await expectNamedCheck(db.department.update({ where: { id: row.id }, data: { version: 0 } }), 'departments_version_check');
+    expect(await db.department.findUnique({ where: { id: row.id } })).toEqual(before);
   });
   test('PostgreSQL has the expected checks, indexes and restrictive user foreign key', async () => {
     const checks = await db.$queryRaw`SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid IN ('public.departments'::regclass, 'public.users'::regclass)`;

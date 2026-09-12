@@ -4,20 +4,8 @@
  */
 const { randomUUID } = require('crypto');
 
-const DEFAULT_JEST_DATABASE_URL = 'postgresql://test:test@localhost:5432/test_db';
-if (process.env.DATABASE_URL === DEFAULT_JEST_DATABASE_URL) {
-  require('dotenv').config({ path: require('path').join(__dirname, '../../../../.env'), override: true });
-}
-const localDatabaseIsSafe = () => {
-  try {
-    const url = new URL(process.env.DATABASE_URL || '');
-    return new Set(['localhost', '127.0.0.1', '::1']).has(url.hostname)
-      && (/test/i.test(url.pathname) || process.env.ALLOW_NON_TEST_DB_INTEGRATION === 'true');
-  } catch { return false; }
-};
-const enabled = process.env.RUN_DB_INTEGRATION_TESTS === 'true' && localDatabaseIsSafe();
-const describeDb = enabled ? describe : describe.skip;
-const skipReason = 'requires RUN_DB_INTEGRATION_TESTS=true and a local PostgreSQL test database (or explicit ALLOW_NON_TEST_DB_INTEGRATION=true)';
+const { enabled, describeDb } = require('../../../../testUtils/databaseSuite');
+const skipReason = 'requires the centralized dedicated test-database guard';
 
 describeDb(`knowledge database integration (${skipReason})`, () => {
   const prisma = require('../../../config/prisma');
@@ -28,6 +16,11 @@ describeDb(`knowledge database integration (${skipReason})`, () => {
   let author;
   let reader;
   let admin;
+  let failAuditFor;
+  prisma.$use((params, next) => {
+    if (failAuditFor && params.model === 'AuditEvent' && params.action === 'create' && params.args.data.entityId === failAuditFor) throw new Error('Synthetic knowledge audit failure');
+    return next(params);
+  });
   const createUser = async (role) => {
     const result = await prisma.user.create({ data: { name: `${prefix}-${role}`, email: `${prefix}-${randomUUID()}@example.test`, password: 'not-used-in-direct-db-tests', role, isActive: true, emailVerified: true } });
     userIds.push(result.id);
@@ -52,6 +45,11 @@ describeDb(`knowledge database integration (${skipReason})`, () => {
       await prisma.knowledgeArticle.deleteMany({ where: { id: { in: articleIds } } });
     }
     if (userIds.length) await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    expect(await prisma.user.count({ where: { id: { in: userIds } } })).toBe(0);
+    expect(await prisma.knowledgeArticle.count({ where: { id: { in: articleIds } } })).toBe(0);
+    expect(await prisma.articleFeedback.count({ where: { articleId: { in: articleIds } } })).toBe(0);
+    expect(await prisma.notification.count({ where: { articleId: { in: articleIds } } })).toBe(0);
+    expect(await prisma.auditEvent.count({ where: { entityId: { in: articleIds } } })).toBe(0);
     await prisma.$disconnect();
   });
 
@@ -59,6 +57,7 @@ describeDb(`knowledge database integration (${skipReason})`, () => {
     const draft = await createArticle({ status: 'DRAFT', publishedAt: null });
     const results = await Promise.allSettled([service.submitArticle(author, draft.id, 1), service.submitArticle(author, draft.id, 1)]);
     expect(results.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((item) => item.status === 'rejected').reason).toMatchObject({ statusCode: 409 });
     expect((await prisma.knowledgeArticle.findUnique({ where: { id: draft.id } })).status).toBe('IN_REVIEW');
   });
   test('feedback upsert maintains the unique article/viewer vote', async () => {
@@ -73,6 +72,27 @@ describeDb(`knowledge database integration (${skipReason})`, () => {
     await expect(service.getArticleBySlug(reader, published.slug)).resolves.toMatchObject({ id: published.id });
     await prisma.user.update({ where: { id: author.id }, data: { isActive: true } });
   });
+  test('draft review/return/publish/archive/restore keeps requester visibility authoritative', async () => {
+    const draft = await createArticle({ status: 'DRAFT', publishedAt: null });
+    await expect(service.getArticleBySlug(reader, draft.slug)).rejects.toMatchObject({ statusCode: 404 });
+    await service.submitArticle(author, draft.id, 1);
+    await expect(service.publishArticle(author, draft.id, 2)).rejects.toMatchObject({ statusCode: 403 });
+    await service.returnToDraft(admin, draft.id, 2, 'Synthetic review note');
+    await service.submitArticle(author, draft.id, 3);
+    await service.publishArticle(admin, draft.id, 4);
+    await expect(service.getArticleBySlug(reader, draft.slug)).resolves.toMatchObject({ id: draft.id });
+    await service.archiveArticle(admin, draft.id, 5);
+    await expect(service.getArticleBySlug(reader, draft.slug)).rejects.toMatchObject({ statusCode: 404 });
+    await service.restoreArticle(admin, draft.id, 6, 'PUBLISHED');
+    expect(await prisma.knowledgeArticle.findUnique({ where: { id: draft.id } })).toMatchObject({ status: 'PUBLISHED', version: 7 });
+  });
+  test('audit failure rolls back workflow state and notification publication', async () => {
+    const draft = await createArticle({ status: 'DRAFT', publishedAt: null });
+    const before = await prisma.knowledgeArticle.findUnique({ where: { id: draft.id } }); failAuditFor = draft.id;
+    try { await expect(service.submitArticle(author, draft.id, 1)).rejects.toThrow('Synthetic knowledge audit failure'); }
+    finally { failAuditFor = null; }
+    expect(await prisma.knowledgeArticle.findUnique({ where: { id: draft.id } })).toEqual(before);
+    expect(await prisma.auditEvent.count({ where: { entityId: draft.id } })).toBe(0);
+    expect(await prisma.notification.count({ where: { articleId: draft.id } })).toBe(0);
+  });
 });
-
-if (!enabled) test.skip(`knowledge DB integration skipped: ${skipReason}`, () => {});
