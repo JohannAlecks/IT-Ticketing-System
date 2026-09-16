@@ -1,0 +1,19 @@
+{
+  "name": "ticketing-system-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node runner.cjs full",
+    "test:smoke": "node runner.cjs smoke",
+    "test:group": "node runner.cjs group",
+    "test:headed": "node runner.cjs headed",
+    "test:repeat": "node runner.cjs repeat",
+    "test:verify": "node runner.cjs verify",
+    "test:infra": "node --test infrastructure.test.cjs",
+    "test:runtime": "node runner.cjs runtime",
+    "test:list": "playwright test --list --reporter=list",
+    "preflight": "node preflight.cjs",
+    "browsers:install": "playwright install chromium"
+  },
+  "devDependencies": { "@playwright/test": "1.63.0" }
+}

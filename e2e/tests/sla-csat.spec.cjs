@@ -1,0 +1,32 @@
+const { test, expect } = require('../fixtures.cjs');
+test('public response, explicit waiting, resolution cycles and editable requester feedback', async ({ fx }) => {
+  const owner = await fx.actor(); const agent = await fx.actor('AGENT'); const row = await fx.ticket(owner.user, { assignedToId: agent.user.id, status: 'IN_PROGRESS' });
+  const url = '/tickets/' + row.id; await agent.page.goto(url);
+  await expect(agent.page.getByRole('heading', { name: 'SLA details', exact: true })).toBeVisible();
+  await agent.page.getByLabel('Pending reason').selectOption('WAITING_FOR_REQUESTER'); await agent.page.getByLabel('Status', { exact: true }).selectOption('PENDING');
+  await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('PENDING');
+  expect((await fx.db.ticket.findUniqueOrThrow({ where: { id: row.id } })).resolutionPausedAt).not.toBeNull();
+  await agent.page.getByLabel('Status', { exact: true }).selectOption('IN_PROGRESS'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('IN_PROGRESS');
+  await agent.page.getByPlaceholder('Write a comment...').fill('Synthetic first public staff response'); await agent.page.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(agent.page.getByPlaceholder('Write a comment...')).toHaveValue('');
+  expect((await fx.db.ticket.findUniqueOrThrow({ where: { id: row.id } })).firstRespondedAt).not.toBeNull();
+  await agent.page.getByLabel('Status', { exact: true }).selectOption('RESOLVED'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('RESOLVED');
+  await owner.page.goto(url); await owner.page.getByRole('radio', { name: '5 — Very satisfied' }).check();
+  await owner.page.getByLabel('Optional written feedback').fill('Synthetic positive feedback'); await owner.page.getByRole('button', { name: 'Submit feedback' }).click();
+  await expect(owner.page.getByText('Saved rating: 5 / 5 — Very satisfied')).toBeVisible();
+  await owner.page.getByRole('radio', { name: '4 — Satisfied', exact: true }).check(); await owner.page.getByRole('button', { name: 'Update feedback' }).click();
+  await expect(owner.page.getByText('Saved rating: 4 / 5 — Satisfied')).toBeVisible();
+  await agent.page.reload(); await expect(agent.page.getByRole('button', { name: 'Update feedback' })).toHaveCount(0);
+  await agent.page.getByLabel('Status', { exact: true }).selectOption('OPEN'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('OPEN');
+  await owner.page.reload(); await expect(owner.page.getByText('Previous-cycle feedback is read-only.')).toBeVisible();
+});
+test('Admin policy editing is real and restored; deadline display uses explicit fixture dates', async ({ fx }) => {
+  const admin = await fx.actor('ADMIN'); const policy = await fx.db.slaPolicy.findUniqueOrThrow({ where: { priority: 'MEDIUM' } }); await fx.preservePolicy(policy.id);
+  await admin.page.goto('/settings?section=sla');
+  const form = admin.page.getByRole('form', { name: policy.name, exact: true });
+  await form.getByLabel('First response (minutes)').fill(String(policy.firstResponseMinutes + 1));
+  await form.getByRole('button', { name: /Save/ }).click();
+  await expect.poll(async () => (await fx.db.slaPolicy.findUniqueOrThrow({ where: { id: policy.id } })).version).toBe(policy.version + 1);
+  const owner = await fx.account(); const row = await fx.ticket(owner, { firstResponseDueAt: new Date(Date.now() - 3600000), resolutionDueAt: new Date(Date.now() - 1800000) });
+  await admin.page.goto('/tickets/' + row.id); await expect(admin.page.getByText(/Breached/i).first()).toBeVisible();
+});

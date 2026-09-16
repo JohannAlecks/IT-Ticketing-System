@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSavedTickets } from '../hooks/usePersonal';
 import { useTickets } from '../hooks/useTickets';
@@ -8,14 +8,14 @@ import TicketFilters from '../components/tickets/TicketFilters';
 import TicketTable from '../components/tickets/TicketTable';
 import Pagination from '../components/tickets/Pagination';
 import Button from '../components/ui/Button';
-function Results({ view, data, page, setPage, draft, setDraft }) {
+function Results({ view, data, page, setPage, draft, setDraft, onDeleted }) {
   const { user } = useAuth();
   const base = { ...view.filters, page, limit: 15, archive: view.scope === 'ARCHIVED' ? 'archived' : 'active', ...(view.scope === 'ASSIGNED_TO_ME' ? { assignedToId: user.id } : {}) };
   const filters = draft ? { ...draft.filters, page, archive: base.archive, ...(view.scope === 'ASSIGNED_TO_ME' ? { assignedToId: user.id } : {}) } : base;
   const preview = useTickets(filters, Boolean(draft));
   const result = draft ? preview.data : data;
   return <div className="space-y-4">
-    <SavedViewsBar active={draft?.baseline || view} scope={view.scope} filters={filters} onSaved={(updated, filtersSaved) => {
+    <SavedViewsBar active={draft?.baseline || view} scope={view.scope} filters={filters} onDeleted={onDeleted} onSaved={(updated, filtersSaved) => {
       if (filtersSaved) { setDraft(null); setPage(1); }
       else setDraft((current) => current ? { ...current, baseline: updated } : null);
     }} />
@@ -29,6 +29,11 @@ function Results({ view, data, page, setPage, draft, setDraft }) {
   </div>;
 }
 function SavedPage({ id }) {
+  const navigate = useNavigate(); const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  // Deletion invalidates the query and can unmount Results before mutateAsync
+  // resolves. This page survives that refetch, but is keyed by account/role/view.
+  const onDeleted = (scope) => { if (alive.current) navigate(scope === 'ARCHIVED' ? '/tickets/archived' : '/tickets'); };
   const [page, setPage] = useState(1);
   const [draft, setDraft] = useState(null);
   const query = useSavedTickets(id, page);
@@ -36,7 +41,7 @@ function SavedPage({ id }) {
   return <div className="space-y-5"><h1 className="page-title">Saved ticket view</h1>
     {query.isLoading && <p role="status">Loading saved ticket view…</p>}
     {query.isError && <p role="alert">This view is unavailable or could not be loaded. <Button onClick={() => query.refetch()}>Retry view</Button></p>}
-    {!unavailable && query.data && <Results view={query.data.view} data={query.data} page={page} setPage={setPage} draft={draft} setDraft={setDraft} />}
+    {!unavailable && query.data && <Results view={query.data.view} data={query.data} page={page} setPage={setPage} draft={draft} setDraft={setDraft} onDeleted={onDeleted} />}
   </div>;
 }
 export default function SavedTicketViewPage() {

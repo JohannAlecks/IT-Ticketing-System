@@ -1,0 +1,35 @@
+const { test, expect, apiStatus } = require('../fixtures.cjs');
+test('requester category guidance, editable suggestions, priority and synthetic attachment roundtrip @smoke @mobile', async ({ fx }) => {
+  const { page, user } = await fx.actor(); const dep = await fx.department('Support');
+  await fx.db.user.update({ where: { id: user.id }, data: { departmentId: dep.id } });
+  await page.goto('/tickets/new'); await expect(page.getByText('Requester department:', { exact: false })).toContainText(dep.name);
+  await page.getByLabel('Category', { exact: true }).selectOption('SOFTWARE_APPLICATION');
+  await page.getByRole('button', { name: 'Application will not open', exact: true }).click();
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Application will not open');
+  await expect(page.getByRole('heading', { name: 'Helpful details to include' })).toBeVisible();
+  await page.getByLabel('Title', { exact: true }).fill('help'); await expect(page.getByText('Please identify the affected device, application, or specific problem.')).toBeVisible();
+  const title = fx.prefix + ' Software cannot open worksheet';
+  await page.getByLabel('Title', { exact: true }).fill(title);
+  await page.getByLabel('Description', { exact: true }).fill('Synthetic issue: the worksheet application shows an error when opening a new document. Reproduces after restart.');
+  await expect(page.getByLabel('Priority', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Submit Ticket', exact: true }).click();
+  await expect(page.getByRole('heading', { name: title })).toBeVisible();
+  const id = new URL(page.url()).pathname.split('/').pop(); expect((await fx.db.ticket.findUniqueOrThrow({ where: { id } })).priority).toBe('MEDIUM');
+  const content = Buffer.from('Synthetic browser attachment only.');
+  await page.getByLabel('Add attachment', { exact: true }).setInputFiles({ name: 'synthetic.txt', mimeType: 'text/plain', buffer: content });
+  await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  const downloaded = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download synthetic.txt' }).click();
+  const download = await downloaded; const chunks = []; for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+  expect(Buffer.concat(chunks).equals(content)).toBe(true); await download.delete();
+});
+test('work-blocking requires impact and requester cannot force urgent triage', async ({ fx }) => {
+  const { page } = await fx.actor(); await page.goto('/tickets/new');
+  await page.getByLabel('Title', { exact: true }).fill(fx.prefix + ' Unable to use workstation');
+  await page.getByLabel('Description', { exact: true }).fill('Synthetic blocked workstation with no available workaround.');
+  await page.getByRole('checkbox', { name: /preventing me from working/ }).check();
+  await expect(page.getByLabel('How is this blocking your work?')).toHaveAttribute('required', '');
+  await page.getByLabel('How is this blocking your work?').fill('Cannot complete assigned work and no alternate workstation is available.');
+  await page.getByRole('button', { name: 'Submit Ticket', exact: true }).click(); await expect(page).toHaveURL(/\/tickets\/[a-f0-9-]+$/);
+  const id = new URL(page.url()).pathname.split('/').pop(); expect((await fx.db.ticket.findUniqueOrThrow({ where: { id } })).priority).toBe('HIGH');
+  expect(await apiStatus(page, '/tickets/' + id, 'PATCH', { priority: 'URGENT' })).toBe(403);
+});

@@ -1,0 +1,35 @@
+const { test, expect } = require('../fixtures.cjs');
+test('notification bell, read/unread, filters, pagination and mark-all @mobile', async ({ fx }) => {
+  const { page, user } = await fx.actor(); await fx.notices(user); await page.goto('/notifications');
+  await expect(page.getByRole('button', { name: 'Notifications, 14 unread' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Notifications', exact: true }).getByRole('listitem')).toHaveCount(12);
+  await page.getByRole('navigation', { name: 'Notification pages' }).getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByRole('list', { name: 'Notifications', exact: true }).getByRole('listitem')).toHaveCount(2);
+  const mark = page.getByRole('button', { name: /Mark .* as read$/ }).first(); const label = await mark.getAttribute('aria-label'); await mark.click();
+  await page.getByRole('button', { name: label.replace(' as read', ' as unread'), exact: true }).click();
+  await page.getByRole('button', { name: 'Mark all read', exact: true }).click();
+  await page.getByRole('tab', { name: 'Unread', exact: true }).click(); await expect(page.getByText('No unread notifications', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'All', exact: true }).click(); await page.getByLabel('Notification type').selectOption('ACCOUNT_REACTIVATED');
+  await expect(page.getByRole('list', { name: 'Notifications', exact: true }).getByRole('listitem')).toHaveCount(12);
+});
+test('watch/unwatch and optional preferences change only future notifications; notes stay private', async ({ fx }) => {
+  const owner = await fx.actor(); const agent = await fx.actor('AGENT'); const row = await fx.ticket(owner.user, { assignedToId: agent.user.id });
+  await owner.page.goto('/tickets/' + row.id); await owner.page.getByRole('button', { name: 'Watch ticket', exact: true }).click();
+  await expect(owner.page.getByRole('button', { name: 'Stop watching', exact: true })).toBeVisible();
+  await agent.page.goto('/tickets/' + row.id); await agent.page.getByPlaceholder('Write a comment...').fill(fx.prefix + ' Private body');
+  await agent.page.getByRole('checkbox', { name: /Internal note/ }).check(); await agent.page.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(agent.page.getByPlaceholder('Write a comment...')).toHaveValue('');
+  expect(await fx.db.notification.count({ where: { recipientId: owner.user.id } })).toBe(0);
+  await agent.page.getByRole('checkbox', { name: /Internal note/ }).uncheck(); await agent.page.getByPlaceholder('Write a comment...').fill('Synthetic public follow-up');
+  await agent.page.getByRole('button', { name: 'Post', exact: true }).click(); await expect(agent.page.getByPlaceholder('Write a comment...')).toHaveValue('');
+  const before = await fx.db.notification.count({ where: { recipientId: owner.user.id } }); expect(before).toBe(1);
+  await owner.page.goto('/settings?section=notifications'); await owner.page.getByRole('button', { name: 'Disable all optional' }).click();
+  await owner.page.getByRole('button', { name: 'Save notification preferences' }).click();
+  await expect(owner.page.getByText('Notification preferences saved.', { exact: true })).toBeVisible();
+  const mandatory = owner.page.getByRole('checkbox', { name: 'Account reactivated', exact: true });
+  await expect(mandatory).toBeDisabled(); await expect(mandatory).toBeChecked();
+  await agent.page.getByPlaceholder('Write a comment...').fill('Synthetic second public follow-up'); await agent.page.getByRole('button', { name: 'Post', exact: true }).click();
+  await expect(agent.page.getByPlaceholder('Write a comment...')).toHaveValue(''); expect(await fx.db.notification.count({ where: { recipientId: owner.user.id } })).toBe(before);
+  await owner.page.goto('/tickets/' + row.id); await owner.page.getByRole('button', { name: 'Stop watching', exact: true }).click();
+  await expect(owner.page.getByRole('button', { name: 'Watch ticket', exact: true })).toBeVisible();
+});

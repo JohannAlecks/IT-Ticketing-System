@@ -6,7 +6,7 @@ import { savedFilters, sameFilters, scopeLabel } from './savedFilters';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
-function Controls({ filters, scope, active, onSaved }) {
+function Controls({ filters, scope, active, onSaved, onDeleted }) {
   const query = usePersonal('views');
   const create = usePersonalMutation('createView');
   const update = usePersonalMutation('updateView');
@@ -57,7 +57,7 @@ function Controls({ filters, scope, active, onSaved }) {
     </form>}
     {confirmation && <div role="alertdialog" aria-label="Delete saved view confirmation" aria-describedby="delete-view-description" className="space-y-2 rounded-xl border border-slate-300 p-3">
       <p id="delete-view-description">Delete this saved view? Its personal shortcuts will also be removed. Tickets are not changed.</p>
-      <Button disabled={busy} onClick={() => run(async () => { await remove.mutateAsync({ id: active.id, version: confirmation }); if (alive.current) navigate(scope === 'ARCHIVED' ? '/tickets/archived' : '/tickets'); })}>Confirm delete view</Button>
+      <Button disabled={busy} onClick={() => run(async () => { await remove.mutateAsync({ id: active.id, version: confirmation }); if (onDeleted) onDeleted(scope); else if (alive.current) navigate(scope === 'ARCHIVED' ? '/tickets/archived' : '/tickets'); })}>Confirm delete view</Button>
       <Button variant="secondary" disabled={busy} onClick={() => setConfirmation(false)}>Keep view</Button>
     </div>}
     {busy && <p role="status">Saving preference…</p>}
