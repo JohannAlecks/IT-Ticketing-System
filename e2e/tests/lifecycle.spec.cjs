@@ -26,14 +26,14 @@ test('cross-role claim, assignment, notes, status, close/reopen, archive and res
   await agent.page.getByLabel('Status', { exact: true }).selectOption('OPEN'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('OPEN');
   await agent.page.getByLabel('Status', { exact: true }).selectOption('IN_PROGRESS'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('IN_PROGRESS');
   await agent.page.getByLabel('Status', { exact: true }).selectOption('RESOLVED'); await expect(agent.page.getByLabel('Status', { exact: true })).toHaveValue('RESOLVED');
-  await agent.page.getByRole('button', { name: 'Archive ticket', exact: true }).click(); await agent.page.getByRole('dialog').getByRole('button', { name: /Archive/ }).click();
+  await agent.page.getByRole('button', { name: 'Archive ticket', exact: true }).click(); await agent.page.getByRole('dialog', { name: 'Archive this ticket?', exact: true }).getByRole('button', { name: 'Move to Archived', exact: true }).click();
   await expect(agent.page).toHaveURL(/\/tickets\/archived$/);
   await agent.page.getByRole('row', { name: 'Open ' + row.title, exact: true }).click();
   await expect(agent.page.getByRole('heading', { name: 'Archived work item' })).toBeVisible();
   await expect(agent.page.getByPlaceholder('Write a comment...')).toHaveCount(0);
   expect(await apiStatus(agent.page, url + '/restore', 'PATCH', {})).toBe(403);
   await admin.page.goto(url); await admin.page.getByRole('button', { name: 'Restore', exact: true }).click();
-  await admin.page.getByRole('dialog').getByRole('button', { name: /Restore/ }).click();
+  await admin.page.getByRole('dialog', { name: 'Restore this ticket?', exact: true }).getByRole('button', { name: 'Restore to active work', exact: true }).click();
   await expect(admin.page).toHaveURL(/\/tickets$/);
   await admin.page.getByRole('row', { name: 'Open ' + row.title, exact: true }).click();
   await expect(admin.page.getByRole('heading', { name: 'Archived work item' })).toHaveCount(0);

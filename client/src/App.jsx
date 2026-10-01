@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import RouteAccessibility, { PublicLayout } from './components/layout/RouteAccessibility';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -31,11 +32,14 @@ import NotificationsPage from './pages/NotificationsPage';
 
 export default function App() {
   return (
-    <Routes>
+    <><RouteAccessibility /><Routes>
+      <Route element={<PublicLayout />}>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/check-email" element={<CheckEmailPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+      </Route>
 
       {/* Everything below requires auth */}
       <Route element={<ProtectedRoute />}>
@@ -78,7 +82,6 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    </Routes></>
   );
 }

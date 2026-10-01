@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, ChevronLeft, ChevronRight } from 'lucide-react';
+import { tabKeys } from '../components/ui/tabKeys';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import ErrorState from '../components/ui/ErrorState';
@@ -35,6 +36,7 @@ const typeLabels = {
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
+  const alive = useRef(false); useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [filters, setFilters] = useState({ status: 'ALL', type: '', page: 1, limit: 12 });
   const notificationsQuery = useNotifications(filters);
   const markRead = useMarkNotificationRead();
@@ -52,6 +54,7 @@ export default function NotificationsPage() {
   const openNotification = async (notification) => {
     try {
       if (!notification.readAt) await markRead.mutateAsync(notification.id);
+      if (!alive.current) return;
       const destination = notificationDestination(notification);
       if (destination) navigate(destination);
     } catch {
@@ -67,17 +70,19 @@ export default function NotificationsPage() {
 
     <div className="notification-panel card space-y-4 p-3 sm:p-4">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div className="flex rounded-xl bg-slate-100 p-1" role="tablist" aria-label="Notification status">
-          {['ALL', 'UNREAD'].map((status) => <button key={status} type="button" role="tab" aria-selected={filters.status === status} onClick={() => updateFilters({ status })} className={`rounded-lg px-3 py-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${filters.status === status ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-white/70'}`}>{status === 'ALL' ? 'All' : 'Unread'}</button>)}
+        <div className="flex rounded-xl bg-slate-100 p-1" onKeyDown={tabKeys} role="tablist" aria-label="Notification status">
+          {['ALL', 'UNREAD'].map((status) => <button key={status} type="button" role="tab" id={`notifications-tab-${status}`} aria-controls="notification-results" tabIndex={filters.status === status ? 0 : -1} aria-selected={filters.status === status} onClick={() => updateFilters({ status })} className={`rounded-lg px-3 py-1.5 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${filters.status === status ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-white/70'}`}>{status === 'ALL' ? 'All' : 'Unread'}</button>)}
         </div>
         <div className="w-full sm:w-56"><Select label="Notification type" value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}><option value="">All types</option>{NOTIFICATION_TYPES.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</Select></div>
       </div>
 
+      <section id="notification-results" role="tabpanel" aria-labelledby={`notifications-tab-${filters.status}`}>
       {notificationsQuery.isLoading && <div className="space-y-3" aria-label="Loading notifications"><div className="h-24 animate-pulse rounded-xl bg-slate-100" /><div className="h-24 animate-pulse rounded-xl bg-slate-100" /><div className="h-24 animate-pulse rounded-xl bg-slate-100" /></div>}
       {notificationsQuery.isError && <div className="space-y-3"><ErrorState message="Couldn’t load notifications. Please try again." /><div className="text-center"><Button variant="secondary" size="sm" onClick={() => notificationsQuery.refetch()}>Retry</Button></div></div>}
       {!notificationsQuery.isLoading && !notificationsQuery.isError && notifications.length === 0 && <EmptyState icon={Bell} title={filters.status === 'UNREAD' ? 'No unread notifications' : 'No notifications yet'} description="New updates will appear here." />}
       {!notificationsQuery.isLoading && !notificationsQuery.isError && notifications.length > 0 && <ul className="space-y-3" aria-label="Notifications">{notifications.map((notification) => <NotificationItem key={notification.id} notification={notification} onOpen={openNotification} onToggleRead={(item) => (!item.readAt ? markRead.mutate(item.id) : markUnread.mutate(item.id))} disabled={markRead.isPending || markUnread.isPending} />)}</ul>}
       {pagination?.totalPages > 1 && <nav className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between" aria-label="Notification pages"><p className="text-sm text-slate-600">Page {pagination.page} of {pagination.totalPages} · {pagination.total} notifications</p><div className="flex gap-2"><Button variant="secondary" size="sm" disabled={pagination.page <= 1} onClick={() => updateFilters({ page: pagination.page - 1 })}><ChevronLeft className="h-4 w-4" /> Previous</Button><Button variant="secondary" size="sm" disabled={pagination.page >= pagination.totalPages} onClick={() => updateFilters({ page: pagination.page + 1 })}>Next <ChevronRight className="h-4 w-4" /></Button></div></nav>}
+      </section>
     </div>
   </div>;
 }

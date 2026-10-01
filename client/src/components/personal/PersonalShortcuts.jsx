@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { Star } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { usePersonal, usePersonalMutation } from '../../hooks/usePersonal';
+import AccountDialog from '../ui/AccountDialog';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
@@ -58,9 +59,9 @@ function Management() {
       </li>)}</ol>
     </>}
     {(views.data?.views || []).filter((v) => !v.available).map((v) => <div key={v.id} className="text-sm text-slate-600">Unavailable saved view: {v.name}. <Button disabled={busy} variant="secondary" onClick={() => setConfirmView(v)}>Remove unavailable view</Button></div>)}
-    {confirmView && <div role="alertdialog" aria-label="Remove unavailable saved view" className="space-y-2"><p>Delete {confirmView.name} and its shortcuts? Tickets remain unchanged.</p><Button disabled={busy} onClick={() => run(async () => { await removeView.mutateAsync({ id: confirmView.id, version: confirmView.version }); setConfirmView(null); })}>Confirm removal</Button><Button variant="secondary" onClick={() => setConfirmView(null)}>Cancel removal</Button></div>}
+    {confirmView && <AccountDialog role="alertdialog" title="Remove unavailable saved view" description={`Delete ${confirmView.name} and its shortcuts? Tickets remain unchanged.`} busy={busy} onClose={() => setConfirmView(null)}>{message?.error && <p role="alert">{message.text}</p>}<Button disabled={busy} onClick={() => run(async () => { await removeView.mutateAsync({ id: confirmView.id, version: confirmView.version }); setConfirmView(null); })}>Confirm removal</Button><Button variant="secondary" onClick={() => setConfirmView(null)}>Cancel removal</Button></AccountDialog>}
     {busy && <p role="status">Saving preferences…</p>}
-    {message && <p role={message.error ? 'alert' : 'status'}>{message.text}</p>}
+    {message && !confirmView && <p role={message.error ? 'alert' : 'status'}>{message.text}</p>}
   </section>;
 }
 export default function PersonalShortcuts() {

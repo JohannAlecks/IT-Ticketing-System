@@ -8,8 +8,36 @@ test('web runtime uses client cwd so Tailwind scans the real application', () =>
   assert.equal(runtimeWorkingDirectory('web'), path.resolve(__dirname, '../client'));
   assert.equal(runtimeWorkingDirectory('api'), path.resolve(__dirname, '../server'));
 });
+test('global setup permits bounded cold startup but keeps teardown identity strict', async () => {
+  const safetyPath = require.resolve('./safety.cjs'); const setupPath = require.resolve('./global-setup.cjs');
+  const original = require.cache[safetyPath].exports; const calls = []; let disconnected = false;
+  try {
+    require.cache[safetyPath].exports = { ...original,
+      runtimeIdentity: async (...args) => { calls.push(args); },
+      database: async () => ({ $disconnect: async () => { disconnected = true; } }),
+      fingerprint: async () => ({ digest: 'synthetic-unchanged' }),
+    };
+    delete require.cache[setupPath];
+    const teardown = await require('./global-setup.cjs')(); await teardown();
+    assert.equal(calls[0][0], process.env); assert.equal(calls[0][1], 15000);
+    assert.deepEqual(calls[1], []); assert.equal(disconnected, true);
+  } finally { require.cache[safetyPath].exports = original; delete require.cache[setupPath]; }
+});
 const env = () => ({ NODE_ENV: 'test', RUN_E2E_TESTS: 'true', E2E_APPROVED: 'true', EMAIL_PROVIDER: 'disabled',
   E2E_DATABASE_URL: 'postgresql://fixture:unused@localhost:5432/ticketing_e2e_test?schema=public', E2E_RUN_ID: randomUUID(), E2E_API_URL: API, E2E_WEB_URL: WEB });
+
+test('gradient contrast uses RGB luminance, not alpha, and detects insufficient contrast', async () => {
+  const { summaryContrast } = require('./contrast.cjs'); const original = global.getComputedStyle;
+  try {
+    global.getComputedStyle = (element) => element.style;
+    for (const [foreground, background, ratio] of [['0, 0, 0', '255, 255, 255', 21], ['255, 255, 255', '0, 0, 0', 21], ['120, 120, 120', '120, 120, 120', 1]]) {
+      const section = { style: { backgroundColor: `rgb(${background})`, backgroundImage: `linear-gradient(rgb(${background}), rgb(${background}))` },
+        querySelectorAll: () => [{ tagName: 'P', style: { color: `rgba(${foreground}, 1)`, fontSize: '14px', fontWeight: '400' } }] };
+      const [sample] = await summaryContrast({ locator: () => ({ evaluate: (fn) => fn(section) }) });
+      assert.equal(sample.conservativeRatio, ratio); assert.equal(sample.required, 4.5);
+    }
+  } finally { global.getComputedStyle = original; }
+});
 
 test('native readiness requires exact identity and 200, drains bodies, and rejects transport failures', async () => {
   const { EventEmitter } = require('node:events'); const { readIdentity } = require('./readiness.cjs');
@@ -29,6 +57,56 @@ test('native readiness requires exact identity and 200, drains bodies, and rejec
   const stalled = () => { const request = new EventEmitter(); request.destroy = () => { destroyed = true; }; return request; };
   await assert.rejects(readIdentity(WEB, 'owned', { get: stalled, timeoutMs: 10 }), /READINESS_TIMEOUT/);
   assert.equal(destroyed, true);
+});
+
+test('profile cleanup waits for asynchronous removal but rejects persistent remnants', async () => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
+  const { profileEmpty } = require('./browser-fixture.cjs');
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-e2e-'));
+  const child = path.join(root, 'synthetic-profile'); let timer;
+  try {
+    fs.mkdirSync(child); assert.equal(await profileEmpty(root, 50), false);
+    timer = setTimeout(() => fs.rmdirSync(child), 20);
+    assert.equal(await profileEmpty(root, 1000), true);
+  } finally { clearTimeout(timer); temporaryRoot(root); if (fs.existsSync(child)) fs.rmdirSync(child); fs.rmdirSync(root); }
+});
+
+test('Chrome fetch cleanup removes only owned scratch directories after disconnection', async () => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
+  const { removeChromeFetchArtifacts, profileEmpty } = require('./browser-fixture.cjs');
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-e2e-'));
+  const directory = path.join(root, 'browser-' + randomUUID()); fs.mkdirSync(directory);
+  const fetcher = path.join(directory, 'chrome_chrome_url_fetcher_123_456');
+  const profile = path.join(directory, 'playwright_chromiumdev_profile-synthetic');
+  const unknown = path.join(directory, 'unexpected');
+  try {
+    for (const target of [fetcher, profile, unknown]) fs.mkdirSync(target);
+    fs.writeFileSync(path.join(fetcher, 'synthetic.tmp'), 'synthetic');
+    assert.throws(() => removeChromeFetchArtifacts(root, directory, false), /BROWSER_TEMP_BOUNDARY/);
+    assert.equal(fs.existsSync(fetcher), true);
+    assert.throws(() => removeChromeFetchArtifacts(root, root, true), /BROWSER_TEMP_BOUNDARY/);
+    assert.equal(removeChromeFetchArtifacts(root, directory, true), 1);
+    assert.equal(fs.existsSync(fetcher), false);
+    assert.equal(fs.existsSync(profile), true); assert.equal(fs.existsSync(unknown), true);
+    assert.equal(await profileEmpty(directory, 0), false);
+    fs.rmdirSync(profile); fs.rmdirSync(unknown);
+    assert.equal(await profileEmpty(directory, 0), true);
+  } finally { temporaryRoot(root); fs.rmSync(root, { recursive: true }); }
+});
+
+test('Chrome fetch cleanup refuses links into another owned directory', () => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
+  const { removeChromeFetchArtifacts } = require('./browser-fixture.cjs');
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ticketing-e2e-'));
+  const directory = path.join(root, 'browser-' + randomUUID()); fs.mkdirSync(directory);
+  const outside = path.join(root, 'not-browser-scratch'); fs.mkdirSync(outside);
+  const fetcher = path.join(directory, 'chrome_chrome_url_fetcher_123_456'); fs.mkdirSync(fetcher);
+  const link = path.join(fetcher, 'redirect');
+  try {
+    fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.throws(() => removeChromeFetchArtifacts(root, directory, true), /BROWSER_TEMP_BOUNDARY/);
+    assert.equal(fs.existsSync(outside), true); assert.equal(fs.existsSync(fetcher), true);
+  } finally { if (fs.existsSync(link)) fs.unlinkSync(link); temporaryRoot(root); fs.rmSync(root, { recursive: true }); }
 });
 
 test('custom role contexts forward every configured mobile descriptor field', () => {

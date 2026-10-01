@@ -91,7 +91,7 @@ export default function TicketControls({ ticket }) {
 
   return (
     <div className="card space-y-4 p-4">
-      <h3 className="text-sm font-semibold text-gray-900">Ticket Controls</h3>
+      <h2 className="text-sm font-semibold text-gray-900">Ticket Controls</h2>
 
       <Select
         label="Status"

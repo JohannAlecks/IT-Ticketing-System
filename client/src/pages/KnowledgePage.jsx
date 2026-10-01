@@ -27,7 +27,7 @@ export default function KnowledgePage() {
   return <div className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><h1 className="page-title">Knowledge Base</h1><p className="page-subtitle">Clear, trusted guidance for common support questions.</p></div>
-      {isStaff && <Link to="/knowledge/manage"><Button variant="secondary">Manage Knowledge</Button></Link>}
+      {isStaff && <Button as={Link} to="/knowledge/manage" variant="secondary">Manage Knowledge</Button>}
     </header>
     <form className="card grid gap-3 p-4 md:grid-cols-[minmax(0,1fr)_12rem_10rem_auto_auto]" onSubmit={(event) => { event.preventDefault(); setFilters({ ...draft, page: 1 }); }}>
       <Input label="Search knowledge" id="knowledge-search" name="search" value={draft.search} onChange={updateDraft} placeholder="Search titles, summaries, or tags" />

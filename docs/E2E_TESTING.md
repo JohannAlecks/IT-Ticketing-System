@@ -1,10 +1,14 @@
-# Isolated E2E verification — installed Chrome 152
+# Isolated E2E verification — installed Chrome 154
 
-## Current evidence (2026-09-16)
+## Active browser approval — October 1, 2026
+
+The executable `C:\Program Files\Google\Chrome\Application\chrome.exe` was reverified as **154.0.8037.59** immediately before updating the strict runtime guard and active desktop/mobile-emulated project labels, and remained that version after execution. Playwright remains 1.63.0 with `channel: 'chrome'`, fresh temporary profiles, separate account contexts, preserved mobile descriptors and zero retries. No personal profile, browser installation or database migration is used. **Both new functional runs passed 29/29**; the separate bounded `node runner.cjs a11y-compat` check passed **10/10 with 24 scanned states and zero Axe violations**. Exact run IDs, durations, incomplete findings, cleanup and final review are recorded in [ACCESSIBILITY.md](ACCESSIBILITY.md). Historical Chrome 152/153 evidence below is unchanged and does not count as a Chrome 154 run.
+
+## Historical evidence (2026-09-16)
 
 Prepared on main, baseline commit b5bd78c. No product backend/schema/migration, real environment file, or tracked tatus change was made. Everything remains unstaged.
 
-Browser coverage is **installed Google Chrome 152.0.7977.83**, Playwright 1.63.0, channel: 'chrome'. Mobile coverage is **desktop Chrome emulation**, not a physical device. Bundled Chromium 153, Firefox and WebKit remain unverified. The approved Chrome isolated launch smoke passed. No installer retry or connection to a personal Chrome profile is permitted.
+The previous approved browser target was **installed Google Chrome 153.0.8010.48**, Playwright 1.63.0, channel: 'chrome'. Earlier completed E2E evidence below used Chrome 152.0.7977.83; it is not relabeled as Chrome 153 execution. Mobile coverage is **desktop Chrome emulation**, not a physical device. Bundled Chromium, Firefox and WebKit remain unverified. No installer retry or connection to a personal Chrome profile is permitted. See ACCESSIBILITY.md for the retained Chrome 153 re-verification checkpoint.
 
 Collection: **29 project cases in 10 files: 24 desktop and five mobile-emulated**. There are 24 distinct source test definitions; five also run in the mobile project. The original 27 project cases became 29 through two added desktop regressions: same-tab notification/search/report cache isolation, and published-internal Knowledge Base API/search/feedback denial with live role downgrade. No count increase is attributed to renaming projects.
 
@@ -103,6 +107,6 @@ npm test runs one full suite. For independent repeatability, invoke it twice sep
 
 Retries are zero, forbidOnly enabled, one worker, stop-on-first-failure. The redacted reporter rejects zero/skipped/failed/retried results, prints safe source/status totals and excludes raw request/error bodies. No authenticated storage state is exported; trace, video and screenshots are disabled. Temporary downloads are removed after in-memory checks. Common reports/auth-state/artifacts are ignored, never staged.
 
-Backend 608-test evidence is retained unless a production backend repair invalidates it; do not rerun it unnecessarily. Frontend 268-test/build results remain valid unless a later client repair invalidates them.
+Backend 608-test evidence is retained unless a production backend repair invalidates it; do not rerun it unnecessarily. The historical frontend 268-test/build evidence above is superseded by the accessibility remediation's 286-test/build results in [ACCESSIBILITY.md](ACCESSIBILITY.md). Current Chrome 153 accessibility and functional regression results are recorded there; earlier Chrome 152 runs are not relabeled as Chrome 153 coverage.
 
 No staging, commit, push, deployment, real email, Resend request, real-upload access, .env/tatus change or development mutation is part of this task.

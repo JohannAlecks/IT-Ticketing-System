@@ -25,15 +25,15 @@ export default function ProfilePage() {
             {initials}
           </div>
           <div>
-            <p className="text-base font-semibold text-gray-900">{user?.name}</p>
+            <p className="break-all text-base font-semibold text-gray-900">{user?.name}</p>
             <p className="text-sm text-gray-500">{ROLE_LABELS[user?.role] || user?.role}</p>
           </div>
         </div>
 
         <dl className="space-y-4 border-t border-gray-100 pt-4 text-sm">
-          <div className="flex justify-between">
+          <div className="flex flex-wrap justify-between gap-2">
             <dt className="text-gray-500">Email</dt>
-            <dd className="text-gray-800">{user?.email}</dd>
+            <dd className="min-w-0 break-all text-gray-800">{user?.email}</dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-gray-500">Role</dt>

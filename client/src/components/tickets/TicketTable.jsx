@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowUpDown } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import StatusBadge from './StatusBadge';
@@ -84,12 +84,12 @@ export default function TicketTable({ tickets = [], archive = 'active', showArch
   });
 
   return (
-    <div className="card overflow-x-auto" data-archive-mode={archive}>
+    <div tabIndex={0} role="region" aria-label="Ticket table, scroll horizontally for more columns" className="card overflow-x-auto" data-archive-mode={archive}>
       <table className={`${isArchived ? 'min-w-[1060px]' : 'min-w-[900px]'} divide-y divide-slate-200 text-sm`} aria-label={isArchived ? 'Archived work items' : 'Active tickets'}>
         <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
           <tr>
             {columns.map((col) => (
-              <th key={col.key} scope="col" className="whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <th key={col.key} scope="col" aria-sort={sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'} className="whitespace-nowrap px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 <button
                   type="button"
                   onClick={() => toggleSort(col.key)}
@@ -107,21 +107,14 @@ export default function TicketTable({ tickets = [], archive = 'active', showArch
           {sorted.map((ticket) => (
             <tr
               key={ticket.id}
-              onClick={() => openTicket(ticket)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  openTicket(ticket);
-                }
-              }}
-              tabIndex={0}
+              onClick={(event) => { if (!event.target.closest('a')) openTicket(ticket); }}
               aria-label={`Open ${ticket.title}`}
               className="cursor-pointer transition-colors hover:bg-brand-50/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand-500"
             >
               <td className="whitespace-nowrap px-4 py-4 font-mono text-xs font-medium text-brand-700">
                 {shortId(ticket.id)}
               </td>
-              <td className="max-w-xs truncate px-4 py-4 font-semibold text-slate-900">{ticket.title}</td>
+              <td className="max-w-xs truncate px-4 py-4 font-semibold text-slate-900"><Link className="underline underline-offset-2" to={`/tickets/${ticket.id}`} state={{ from: isArchived ? '/tickets/archived' : '/tickets' }}>{ticket.title}</Link></td>
               <td className="whitespace-nowrap px-4 py-4"><StatusBadge status={ticket.status} /></td>
               <td className="whitespace-nowrap px-4 py-4"><PriorityBadge priority={ticket.priority} /></td>
               {canSeeSla && <td className="whitespace-nowrap px-4 py-4"><SlaBadge sla={ticket.sla} role={role} showCountdown={!isArchived} /></td>}

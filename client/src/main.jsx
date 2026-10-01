@@ -24,7 +24,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider><AuthProvider>
           <App />
-          <Toaster position="top-right" toastOptions={{ duration: 3500 }} />
+          <Toaster position="top-right" toastOptions={{ duration: 8000 }} />
         </AuthProvider></ThemeProvider>
       </QueryClientProvider>
     </BrowserRouter>

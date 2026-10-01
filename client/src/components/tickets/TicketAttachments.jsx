@@ -74,10 +74,10 @@ export default function TicketAttachments({ ticket, readOnly = false }) {
 
   return (
     <div className="card p-5">
-      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">
         <Paperclip className="h-4 w-4 text-gray-400" />
         Attachments {attachments ? `(${attachments.length})` : ''}
-      </h3>
+      </h2>
 
       {isLoading && <Spinner className="py-6" />}
       {isError && <ErrorState message="Couldn't load attachments." />}

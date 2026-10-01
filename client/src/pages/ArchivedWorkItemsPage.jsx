@@ -50,7 +50,7 @@ export default function ArchivedWorkItemsPage() {
           icon={TicketIcon}
           title="No archived work items"
           description="Resolved and closed tickets moved to the archive will appear here."
-          action={<Link to="/tickets"><Button size="sm">View active tickets</Button></Link>}
+          action={<Button as={Link} to="/tickets" size="sm">View active tickets</Button>}
         />
       )}
 

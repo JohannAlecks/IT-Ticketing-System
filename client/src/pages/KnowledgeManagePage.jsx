@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FilePlus2, Pencil, Send, Archive, RotateCcw, CheckCircle2, Undo2 } from 'lucide-react';
+import AccountDialog from '../components/ui/AccountDialog';
+import { tabKeys } from '../components/ui/tabKeys';
 import Button from '../components/ui/Button';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import Spinner from '../components/ui/Spinner';
@@ -50,9 +52,10 @@ export default function KnowledgeManagePage() {
   };
   const openReturn = (article) => { setReviewing(article); setReviewNote(''); setVisibleError(''); };
   return <div className="space-y-5">
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="page-title">Manage Knowledge</h1><p className="page-subtitle">Create, review, and maintain support guidance.</p></div><Link to="/knowledge/new"><Button><FilePlus2 className="h-4 w-4" /> New article</Button></Link></header>
-    <div className="flex overflow-x-auto border-b border-slate-200" role="tablist" aria-label="Knowledge status filters">{availableTabs.map((item) => <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 ${tab === item.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`} onClick={() => setTab(item.key)}>{item.label}</button>)}</div>
-    {visibleError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{visibleError}</p>}
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="page-title">Manage Knowledge</h1><p className="page-subtitle">Create, review, and maintain support guidance.</p></div><Button as={Link} to="/knowledge/new"><FilePlus2 className="h-4 w-4" /> New article</Button></header>
+    <div className="flex overflow-x-auto border-b border-slate-200" onKeyDown={tabKeys} role="tablist" aria-label="Knowledge status filters">{availableTabs.map((item) => <button key={item.key} type="button" role="tab" tabIndex={tab === item.key ? 0 : -1} aria-controls="knowledge-results" id={`knowledge-tab-${item.key}`} aria-selected={tab === item.key} className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 ${tab === item.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`} onClick={() => setTab(item.key)}>{item.label}</button>)}</div>
+    <section id="knowledge-results" role="tabpanel" aria-labelledby={`knowledge-tab-${tab}`}>
+    {visibleError && !pending && !reviewing && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{visibleError}</p>}
     {query.isLoading && <Spinner />}{query.isError && <ErrorState message="Couldn't load managed Knowledge Base articles." />}
     {!query.isLoading && !query.isError && articles.length === 0 && <EmptyState title={`No ${availableTabs.find((item) => item.key === tab)?.label.toLowerCase()} articles`} description="Articles will appear here when they match this workflow state." />}
     <div className="space-y-3">{articles.map((article) => {
@@ -70,7 +73,7 @@ export default function KnowledgeManagePage() {
             <p className="mt-3 text-xs text-slate-500">Updated {formatKnowledgeDate(article.updatedAt) || 'recently'}</p>
           </div>
           <div className="flex shrink-0 flex-wrap content-start gap-2">
-            {article.status === 'DRAFT' && <Link to={`/knowledge/${article.id}/edit`}><Button variant="secondary" size="sm"><Pencil className="h-4 w-4" /> Edit</Button></Link>}
+            {article.status === 'DRAFT' && <Button as={Link} to={`/knowledge/${article.id}/edit`} variant="secondary" size="sm"><Pencil className="h-4 w-4" /> Edit</Button>}
             {article.status === 'IN_REVIEW' && role === 'ADMIN' && <Button variant="secondary" size="sm" onClick={() => openReturn(article)}><Undo2 className="h-4 w-4" /> Return to draft</Button>}
             {article.status === 'ARCHIVED' && role === 'ADMIN' && <Button variant="secondary" size="sm" onClick={() => { setPending({ action: 'restore', label: 'Restore to draft', description: 'Restore this article as an editable draft?', targetStatus: 'DRAFT', article }); setVisibleError(''); }}><Undo2 className="h-4 w-4" /> Restore to draft</Button>}
             {action && <Button size="sm" variant={action.action === 'archive' ? 'danger' : 'primary'} onClick={() => { setPending({ ...action, article }); setVisibleError(''); }}><ActionIcon className="h-4 w-4" /> {action.label}</Button>}
@@ -78,7 +81,8 @@ export default function KnowledgeManagePage() {
         </div>
       </article>;
     })}</div>
-    <ConfirmDialog open={!!pending} title={pending?.label || 'Confirm action'} description={pending?.description} confirmLabel={pending?.label} danger={pending?.action === 'archive'} isLoading={workflow.isPending} onCancel={() => setPending(null)} onConfirm={() => runWorkflow({ action: pending.action, id: pending.article.id, version: pending.article.version, targetStatus: pending.targetStatus })} />
-    {reviewing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onSubmit={(event) => { event.preventDefault(); if (reviewNote.trim()) runWorkflow({ action: 'return-to-draft', id: reviewing.id, version: reviewing.version, reviewNote: reviewNote.trim() }); }} aria-labelledby="return-to-draft-title"><h2 id="return-to-draft-title" className="text-lg font-semibold text-slate-900">Return to draft</h2><label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="review-note">Required review note</label><textarea id="review-note" className="input mt-1 min-h-28" required value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /><div className="mt-5 flex justify-end gap-3"><Button variant="secondary" type="button" disabled={workflow.isPending} onClick={() => setReviewing(null)}>Cancel</Button><Button type="submit" isLoading={workflow.isPending}>Return to draft</Button></div></form></div>}
+    </section>
+    <ConfirmDialog open={!!pending} title={pending?.label || 'Confirm action'} description={pending?.description} error={visibleError} confirmLabel={pending?.label} danger={pending?.action === 'archive'} isLoading={workflow.isPending} onCancel={() => setPending(null)} onConfirm={() => runWorkflow({ action: pending.action, id: pending.article.id, version: pending.article.version, targetStatus: pending.targetStatus })} />
+    {reviewing && <AccountDialog title="Return to draft" onClose={() => setReviewing(null)} busy={workflow.isPending}>{visibleError && <p role="alert" className="text-sm text-red-700">{visibleError}</p>}<form onSubmit={(event) => { event.preventDefault(); if (reviewNote.trim()) runWorkflow({ action: 'return-to-draft', id: reviewing.id, version: reviewing.version, reviewNote: reviewNote.trim() }); }}><label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="review-note">Required review note</label><textarea id="review-note" className="input mt-1 min-h-28" required value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} /><div className="mt-5 flex justify-end gap-3"><Button variant="secondary" type="button" disabled={workflow.isPending} onClick={() => setReviewing(null)}>Cancel</Button><Button type="submit" isLoading={workflow.isPending}>Return to draft</Button></div></form></AccountDialog>}
   </div>;
 }

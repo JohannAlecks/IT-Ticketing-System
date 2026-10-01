@@ -139,3 +139,30 @@ html[data-theme='dark'] .account-dialog { background: #152131; color: #e2e8f0; b
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Shared accessible text and controls: semantic hues stay readable on both
+   opaque and translucent surfaces. Disabled controls retain their own state. */
+.text-gray-400, .text-slate-400 { color: #64748b; }
+.input::placeholder, textarea::placeholder { color: #64748b; opacity: 1; }
+.input, select, textarea { border-color: #64748b; }
+button, .btn { min-height: 24px; min-width: 24px; }
+:is(button, a, select, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #1d4ed8; outline-offset: 3px; scroll-margin-block: 1rem;
+}
+.skip-link { position: fixed; top: .5rem; left: .5rem; z-index: 100; transform: translateY(-200%); background: #fff; color: #075f4b; padding: .75rem 1rem; border: 2px solid currentColor; border-radius: .5rem; }
+.skip-link:focus { transform: translateY(0); }
+html[data-theme='dark'] .text-gray-400,
+html[data-theme='dark'] .text-slate-400 { color: #a7b6ca; }
+html[data-theme='dark'] :is(.text-brand-600, .text-brand-700, .text-brand-800, .text-brand-900, .text-emerald-600, .text-emerald-700, .text-emerald-800, .text-green-700, .text-green-800) { color: #6ee7c7; }
+html[data-theme='dark'] :is(.text-blue-600, .text-blue-700, .text-blue-800, .text-sky-600, .text-sky-700, .text-sky-800) { color: #93c5fd; }
+html[data-theme='dark'] :is(.text-red-600, .text-red-700, .text-red-800) { color: #fca5a5; }
+html[data-theme='dark'] :is(.text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-orange-700, .text-orange-800) { color: #fcd34d; }
+html[data-theme='dark'] :is(.text-violet-600, .text-violet-700, .text-violet-800, .text-purple-700, .text-purple-800) { color: #d8b4fe; }
+html[data-theme='dark'] .bg-brand-50\/40 { background-color: #19343c; }
+html[data-theme='dark'] :is(button, a, select, input, textarea, [tabindex]):focus-visible { outline-color: #93c5fd; }
+html[data-theme='dark'] :is(.input, select, textarea) { border-color: #8394a8; }
+html[data-theme='dark'] :is(.input, textarea)::placeholder { color: #a7b6ca; }
+@media (forced-colors: active) {
+  :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid Highlight; }
+  .btn, .input, select, textarea { border: 1px solid ButtonText; }
+}

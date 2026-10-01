@@ -41,7 +41,7 @@ it('profile selects a structured department with immediate Auth refresh and acco
   expect(auth.updateUser).toHaveBeenCalledWith(expect.objectContaining({ department: 'New Team' })); expect(invalidate).toHaveBeenCalledWith({ queryKey: ['protected', 'one'] });
   expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Appearance' }));
-  expect(screen.getByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeInTheDocument();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 it('profile warns before section navigation, discards explicitly and never saves on Discard', async () => {
@@ -71,7 +71,10 @@ it('password visibility is independent, never submits, and requirements/mismatch
   show('/settings?section=security');
   fireEvent.click(screen.getByRole('button', { name: 'Show current password' })); expect(screen.getByLabelText('Current password')).toHaveAttribute('type', 'text'); expect(screen.getByLabelText('New password')).toHaveAttribute('type', 'password'); expect(api.changePassword).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText('Current password'), { target: { value: 'CurrentFixture1!' } }); fireEvent.change(screen.getByLabelText('New password'), { target: { value: 'NextFixture2!' } }); fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'mismatch' } });
-  expect(screen.getByRole('alert')).toHaveTextContent('Passwords do not match'); expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
+  expect(screen.getByLabelText('Confirm password')).toHaveAccessibleDescription('Passwords do not match.');
+  expect(screen.getByLabelText('Confirm password')).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Change password' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'NextFixture2!' } }); fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
-  await screen.findByText('Password changed.'); expect(api.changePassword).toHaveBeenCalledWith({ currentPassword: 'CurrentFixture1!', newPassword: 'NextFixture2!' }); expect(screen.getByLabelText('New password')).toHaveValue('');
+  await screen.findByText('Password changed.'); expect(screen.getByRole('status')).toHaveTextContent('Password changed.'); expect(api.changePassword).toHaveBeenCalledWith({ currentPassword: 'CurrentFixture1!', newPassword: 'NextFixture2!' }); expect(screen.getByLabelText('New password')).toHaveValue('');
 });

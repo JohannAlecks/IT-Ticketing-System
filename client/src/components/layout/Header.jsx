@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, LogOut, ChevronDown, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -14,6 +14,17 @@ export default function Header({ onMenuClick }) {
   const [open, setOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const bellRef = useRef(null);
+  const profileRef = useRef(null);
+  const profileButton = useRef(null);
+  const closeNotifications = useCallback(() => setNotificationsOpen(false), []);
+  useEffect(() => {
+    if (!open) return undefined;
+    profileRef.current?.querySelector('#account-actions button')?.focus();
+    const key = (event) => { if (event.key === 'Escape') { event.preventDefault(); setOpen(false); profileButton.current?.focus(); } };
+    const pointer = (event) => { if (!profileRef.current?.contains(event.target)) setOpen(false); };
+    document.addEventListener('keydown', key); document.addEventListener('pointerdown', pointer);
+    return () => { document.removeEventListener('keydown', key); document.removeEventListener('pointerdown', pointer); };
+  }, [open]);
   const unreadQuery = useUnreadNotificationCount();
   const unreadCount = Math.max(0, Number(unreadQuery.data?.unreadCount || 0));
   const unreadLabel = unreadCount > 99 ? '99+' : unreadCount;
@@ -49,10 +60,14 @@ export default function Header({ onMenuClick }) {
             {unreadCount > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-bold leading-5 text-white" aria-hidden="true">{unreadLabel}</span>}
             {unreadCount > 0 && <span className="sr-only">{unreadCount} unread notifications</span>}
           </button>
-          {notificationsOpen && <NotificationsDropdown onClose={() => setNotificationsOpen(false)} bellRef={bellRef} unreadCount={unreadCount} />}
+          {notificationsOpen && <NotificationsDropdown onClose={closeNotifications} bellRef={bellRef} unreadCount={unreadCount} />}
         </div>
-      <div className="relative">
+      <div ref={profileRef} className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}>
         <button
+          ref={profileButton}
+          aria-label={`Account menu (${initials}), ${user?.name}, ${ROLE_LABELS[user?.role] || user?.role}`}
+          aria-expanded={open}
+          aria-controls="account-actions"
           onClick={() => setOpen((o) => !o)}
           className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-slate-100"
         >
@@ -68,8 +83,8 @@ export default function Header({ onMenuClick }) {
 
         {open && (
           <div
+            id="account-actions"
             className="absolute right-0 z-10 mt-2 w-44 rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-            onMouseLeave={() => setOpen(false)}
           >
             <button
               onClick={handleLogout}

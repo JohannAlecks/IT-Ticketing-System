@@ -69,10 +69,10 @@ export default function SlaBadge({
     <span
       className={`sla-badge inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${STATE_STYLES[state] || STATE_STYLES.NOT_APPLICABLE} ${className}`}
       data-sla-state={state}
-      aria-label={accessibleLabel}
       title={accessibleLabel}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {!label && <span className="sr-only">SLA: </span>}
       <span>{label ? `${label}: ` : ''}{stateText}</span>
       {countdownText && <span className="font-normal">· {countdownText}</span>}
     </span>

@@ -1,6 +1,7 @@
 const { fork, spawn } = require('node:child_process');
 const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
 const { randomUUID, randomBytes } = require('node:crypto');
+const { emit } = require('./evidence.cjs');
 const { database, fingerprint, runtimeIdentity, temporaryRoot, serverRequire, API, WEB, fail } = require('./safety.cjs');
 const GROUPS = ['auth', 'roles', 'creation', 'lifecycle', 'notifications', 'knowledge', 'sla-csat', 'settings-users', 'departments-email', 'personal-reports'];
 function childEnvironment(source, root, run) {
@@ -93,9 +94,10 @@ async function developmentBaseline(source) {
 async function main() {
   const startedAt = Date.now();
   const [mode = 'full', group] = process.argv.slice(2);
-  if (!['full', 'smoke', 'group', 'headed', 'repeat', 'verify', 'runtime'].includes(mode) || (mode === 'group' ? !GROUPS.includes(group) : group)) throw fail('COMMAND');
+  if (!['full', 'smoke', 'group', 'headed', 'repeat', 'verify', 'runtime', 'a11y', 'a11y-baseline', 'a11y-keyboard', 'a11y-compat'].includes(mode) || (mode === 'group' ? !GROUPS.includes(group) : group)) throw fail('COMMAND');
   // Validate before allocating directories, starting services, or writing fixtures.
   const run = randomUUID(); const env = childEnvironment(process.env, '', run);
+  if (mode.startsWith('a11y')) { env.E2E_A11Y = 'true'; env.A11Y_BASELINE = String(mode === 'a11y-baseline'); }
   const db = await database(env); const children = []; let root; let before; let dev;
   const interrupted = new AbortController(); const interrupt = () => interrupted.abort();
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt);
@@ -109,18 +111,18 @@ async function main() {
     // Initial Vite HTML transformation can outlast a warm health check on
     // Windows. This waits once for readiness; fixture checks remain at 3s.
     await runtimeIdentity(env, 15000);
-    console.log(JSON.stringify({ status: 'runtime-verified', runId: run, api: API, web: WEB, purpose: 'e2e', fixtureFingerprint: before, developmentFingerprint: dev }));
+    emit(run, { status: 'runtime-verified', runId: run, api: API, web: WEB, purpose: 'e2e', fixtureFingerprint: before, developmentFingerprint: dev });
     if (interrupted.signal.aborted) throw fail('INTERRUPTED');
     const jobs = mode === 'runtime' ? [] : mode === 'verify' ? [...GROUPS.map((g) => [g, [g + '.spec.cjs']]), ['full-1', []], ['full-2', []]]
       : mode === 'repeat' ? [['full-1', []], ['full-2', []]]
-      : [[mode, mode === 'group' ? [group + '.spec.cjs'] : mode === 'smoke' ? ['--grep', '@smoke'] : mode === 'headed' ? ['--headed'] : []]];
+      : [[mode, mode.startsWith('a11y') ? [mode === 'a11y-compat' ? 'compatibility.spec.cjs' : 'accessibility.spec.cjs', ...(mode === 'a11y-baseline' ? ['--max-failures=0'] : mode === 'a11y-keyboard' ? ['--grep', 'keyboard '] : [])] : mode === 'group' ? [group + '.spec.cjs'] : mode === 'smoke' ? ['--grep', '@smoke'] : mode === 'headed' ? ['--headed'] : []]];
     for (const [label, args] of jobs) {
       if (interrupted.signal.aborted) throw fail('INTERRUPTED');
       const stageStartedAt = Date.now();
       const result = await stage(label, args, env, interrupted.signal);
       const clean = JSON.stringify(await fingerprint(db)) === JSON.stringify(before);
       const developmentUnchanged = JSON.stringify(await developmentBaseline(process.env)) === JSON.stringify(dev);
-      console.log(JSON.stringify({ stage: label, runId: run, durationMs: Date.now() - stageStartedAt, exitCode: result, fixtureBaselineRestored: clean, developmentUnchanged }));
+      emit(run, { stage: label, runId: run, durationMs: Date.now() - stageStartedAt, exitCode: result, fixtureBaselineRestored: clean, developmentUnchanged });
       if (result || !clean || !developmentUnchanged) throw fail('VERIFICATION_OR_CLEANUP');
       await serverRequire('./testUtils/databaseGuard').verifyDatabase(db, env, undefined, 'e2e');
     }
@@ -133,8 +135,8 @@ async function main() {
     } finally {
       await db.$disconnect();
       if (root) { temporaryRoot(root); fs.rmSync(root, { recursive: true }); }
-      console.log(JSON.stringify({ status: 'runtime-cleanup', runId: run, durationMs: Date.now() - startedAt, fixtureBaselineRestored, developmentUnchanged,
-        temporaryRootRemoved: Boolean(root) && !fs.existsSync(root), ownedProcessesStopped: children.every((child) => child.exitCode !== null || child.signalCode !== null) }));
+      emit(run, { status: 'runtime-cleanup', runId: run, durationMs: Date.now() - startedAt, fixtureBaselineRestored, developmentUnchanged,
+        temporaryRootRemoved: Boolean(root) && !fs.existsSync(root), ownedProcessesStopped: children.every((child) => child.exitCode !== null || child.signalCode !== null) });
       process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
     }
   }

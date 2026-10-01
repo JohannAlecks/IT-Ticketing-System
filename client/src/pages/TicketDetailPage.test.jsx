@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TicketDetailPage from './TicketDetailPage';
@@ -70,6 +70,16 @@ afterEach(() => {
 });
 
 describe('TicketDetailPage archived workflow', () => {
+  it.each([
+    ['archive', 'Archive ticket', false], ['restore', 'Restore', true], ['remove', 'Delete ticket', false],
+  ])('keeps a sanitized %s failure inside its modal', (mutation, trigger, archived) => {
+    reset({ ticket: activeTicket(archived ? { archivedAt: '2026-09-02T11:30:00.000Z' } : {}) });
+    hooks[mutation].error = new Error('Private transport details must never be displayed');
+    renderPage(); fireEvent.click(screen.getByRole('button', { name: trigger, exact: true }));
+    const alert = within(screen.getByRole('dialog')).getByRole('alert');
+    expect(alert).toHaveTextContent(/Could not/);
+    expect(alert).not.toHaveTextContent('Private transport details');
+  });
   it('renders archived work read-only while keeping comments, activity, and attachment downloads visible', () => {
     reset({
       role: 'AGENT',
@@ -100,7 +110,9 @@ describe('TicketDetailPage archived workflow', () => {
     expect(screen.getByText('Ada Admin')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('previous workflow status will be retained');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    // jsdom does not synthesize the native dialog cancel event from Escape.
+    // Real Escape, trapping and restoration are covered in the browser suite.
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
@@ -136,7 +148,7 @@ describe('TicketDetailPage archived workflow', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('read-only');
     expect(screen.getByRole('dialog')).toHaveTextContent('Comments, attachments, and history will be preserved');
     expect(screen.getByRole('dialog')).toHaveTextContent('restore it later');
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive ticket' }));

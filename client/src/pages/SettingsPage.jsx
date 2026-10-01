@@ -197,7 +197,7 @@ function NotificationPreferencesSection() {
       {ready && <div className="flex flex-wrap gap-2">{[[true, 'Enable all optional'], [false, 'Disable all optional']].map(([value, label]) => <Button key={label} variant="secondary" disabled={saving} onClick={() => { const keys = visibleGroups.flatMap((group) => group.options).filter((option) => !option.mandatory && !mandatory.has(option.key)).map((option) => option.key); setDraft((current) => ({ ...current, ...Object.fromEntries(keys.map((key) => [key, value])) })); setFeedback(null); }}>{label}</Button>)}</div>}
       {content}
       <div className="flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-h-5 text-sm" aria-live="polite">
+        <div className="min-h-5 text-sm">
           {feedback?.type === 'saving' && <span className="notification-feedback-saving text-slate-600" role="status">{feedback.message}</span>}
           {feedback?.type === 'success' && <span className="notification-feedback-success text-emerald-700" role="status">{feedback.message}</span>}
           {feedback?.type === 'error' && <span className="notification-feedback-error-text text-red-700" role="alert">{feedback.message}</span>}

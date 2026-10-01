@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import FormErrors from '../components/ui/FormErrors';
 import Input from '../components/ui/Input';
 import Textarea from '../components/ui/Textarea';
 import Select from '../components/ui/Select';
@@ -56,7 +57,7 @@ export default function CreateTicketPage() {
       <h1 className="mb-1 text-xl font-semibold text-gray-900">Create a new ticket</h1>
       <p className="mb-6 text-sm text-gray-500">Describe your issue and we'll route it to the right team.</p>
 
-      <form onSubmit={handleSubmit} className="card space-y-4 p-6">
+      <form onSubmit={handleSubmit} className="card space-y-4 p-6"><FormErrors errors={errors} fields={{ title: 'title', description: 'description', impactDescription: 'impactDescription', category: 'category', priority: 'priority' }} /><p className="text-xs text-slate-600">Fields marked * are required.</p>
         <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Submit one issue per ticket so our support team can track and resolve it accurately.</p>
         <p className="text-sm text-slate-500">Requester department: <strong>{user?.department || 'Not specified'}</strong></p>
         <Select label="Category" id="category" name="category" value={form.category} onChange={handleChange}>

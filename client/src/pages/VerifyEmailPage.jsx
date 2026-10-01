@@ -92,9 +92,7 @@ export default function VerifyEmailPage() {
             </div>
             <h1 className="text-xl font-semibold text-gray-900">Email verified</h1>
             <p className="mt-2 text-sm text-gray-500" role="status" aria-live="polite">{message}</p>
-            <Link to="/login">
-              <Button className="mt-6 w-full">Go to login</Button>
-            </Link>
+            <Button as={Link} to="/login" className="mt-6 w-full">Go to login</Button>
           </>
         )}
 
@@ -107,9 +105,7 @@ export default function VerifyEmailPage() {
             </div>
             <h1 className="text-xl font-semibold text-gray-900">Verification failed</h1>
             <p className="mt-2 text-sm text-gray-500" role="alert">{message}</p>
-            <Link to="/register">
-              <Button variant="secondary" className="mt-6 w-full">Back to registration</Button>
-            </Link>
+            <Button as={Link} to="/register" variant="secondary" className="mt-6 w-full">Back to registration</Button>
           </>
         )}
       </div>

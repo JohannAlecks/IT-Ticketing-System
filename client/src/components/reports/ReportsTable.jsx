@@ -66,7 +66,7 @@ export default function ReportsTable({ rows, isAdmin }) {
         <p className="text-xs text-slate-500">{items.length} row{items.length === 1 ? '' : 's'} on this page</p>
       </div>
 
-      <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
+      <div role="region" aria-label="Scrollable ticket report" tabIndex={0} className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
         <table className="w-full divide-y divide-slate-200 text-sm">
           <caption className="sr-only">Detailed report tickets</caption>
           <thead className="bg-slate-50/95">
@@ -105,10 +105,9 @@ export default function ReportsTable({ rows, isAdmin }) {
         </table>
       </div>
 
-      <div className="space-y-3 md:hidden" aria-label="Detailed report ticket cards">
+      <div role="region" className="space-y-3 md:hidden" aria-label="Detailed report ticket cards">
         {items.map((row) => <article key={row?.id} className="card p-4"><TicketFields row={row} isAdmin={isAdmin} /></article>)}
       </div>
     </section>
   );
 }
-

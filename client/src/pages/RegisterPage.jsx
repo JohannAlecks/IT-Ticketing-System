@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { LifeBuoy } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import FormErrors from '../components/ui/FormErrors';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 
@@ -57,11 +58,12 @@ export default function RegisterPage() {
           <p className="mt-1 text-sm text-gray-500">Start submitting and tracking support tickets</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="card space-y-4 p-6">
+        <form onSubmit={handleSubmit} className="card space-y-4 p-6"><FormErrors errors={errors} fields={{ name: 'name', email: 'email', password: 'password' }} /><p className="text-xs text-slate-600">Fields marked * are required.</p>
           <Input
             label="Full name"
             id="name"
             name="name"
+            autoComplete="name"
             required
             value={form.name}
             onChange={handleChange}
@@ -84,6 +86,7 @@ export default function RegisterPage() {
             name="password"
             type="password"
             autoComplete="new-password"
+            helperText="Use at least 8 characters and choose a unique password."
             required
             value={form.password}
             onChange={handleChange}

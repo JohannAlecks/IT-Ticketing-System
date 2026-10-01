@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import NotificationsDropdown from './NotificationsDropdown';
@@ -34,6 +34,18 @@ afterEach(() => {
 });
 
 describe('NotificationsDropdown', () => {
+  it('ignores a late mark-read response after its account boundary unmounts', async () => {
+    let finish;
+    hooks.markRead.mutateAsync = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+    hooks.recent.data = { notifications: [{ id: 'n-1', type: 'TICKET_PUBLIC_REPLY', ticketId: 'old-ticket', title: 'Old reply', readAt: null }] };
+    const { rerender, onClose } = renderDropdown();
+    fireEvent.click(screen.getByRole('button', { name: /^Old reply/ }));
+    expect(hooks.markRead.mutateAsync).toHaveBeenCalledWith('n-1');
+    rerender(<MemoryRouter><LocationProbe /></MemoryRouter>);
+    await act(async () => finish({}));
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    expect(onClose).not.toHaveBeenCalled();
+  });
   it('shows loading, empty, and retryable error states', () => {
     hooks.recent = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
     const { rerender } = renderDropdown();

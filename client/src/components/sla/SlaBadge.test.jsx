@@ -15,7 +15,8 @@ describe('SlaBadge', () => {
 
     expect(screen.getByText(/First response: Due soon/)).toBeInTheDocument();
     expect(screen.getByText(/remaining/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/First response: Due soon/)).toHaveAttribute('data-sla-state', 'DUE_SOON');
+    expect(screen.getByText(/First response: Due soon/).parentElement).toHaveAttribute('data-sla-state', 'DUE_SOON');
+    expect(screen.getByText(/First response: Due soon/).parentElement).not.toHaveAttribute('aria-label');
   });
 
   it('does not expose staff SLA state to requesters or while role is unavailable', () => {

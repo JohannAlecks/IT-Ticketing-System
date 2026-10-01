@@ -6,6 +6,8 @@ import NotificationItem from './NotificationItem';
 
 export default function NotificationsDropdown({ onClose, bellRef, unreadCount: totalUnreadCount = 0 }) {
   const dropdownRef = useRef(null);
+  const alive = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const navigate = useNavigate();
   const recent = useNotifications({ status: 'ALL', page: 1, limit: 5 });
   const markRead = useMarkNotificationRead();
@@ -38,6 +40,7 @@ export default function NotificationsDropdown({ onClose, bellRef, unreadCount: t
   const openNotification = async (notification) => {
     try {
       if (!notification.readAt) await markRead.mutateAsync(notification.id);
+      if (!alive.current) return;
       const destination = notificationDestination(notification);
       if (destination) navigate(destination);
       onClose();

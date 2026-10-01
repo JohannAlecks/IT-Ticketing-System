@@ -272,6 +272,7 @@ export default function TicketDetailPage() {
         confirmLabel="Delete"
         danger
         isLoading={deleteTicket.isPending}
+        error={deleteTicket.error ? 'Could not delete this ticket. Close this dialog to review the current ticket state, then retry if appropriate.' : undefined}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleDelete}
       />
@@ -281,6 +282,7 @@ export default function TicketDetailPage() {
         description={`Archive ${shortId(ticket.id)} — ${ticket.title}?\n\nCurrent status: ${ticket.status.replace('_', ' ')}. The ticket will become read-only and move to Archived Work Items. Comments, attachments, and history will be preserved, and an administrator can restore it later.`}
         confirmLabel="Move to Archived"
         isLoading={archiveTicket.isPending}
+        error={archiveTicket.error ? 'Could not archive this ticket. Close this dialog to review the current ticket state, then retry if appropriate.' : undefined}
         onCancel={() => setArchiveConfirmOpen(false)}
         onConfirm={handleArchive}
       />
@@ -290,6 +292,7 @@ export default function TicketDetailPage() {
         description="This ticket will return to active work. Its previous workflow status will be retained, along with its comments, attachments, and history."
         confirmLabel="Restore to active work"
         isLoading={restoreTicket.isPending}
+        error={restoreTicket.error ? 'Could not restore this ticket. Close this dialog to review the current ticket state, then retry if appropriate.' : undefined}
         onCancel={() => setRestoreConfirmOpen(false)}
         onConfirm={handleRestore}
       />

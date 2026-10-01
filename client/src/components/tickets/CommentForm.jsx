@@ -24,6 +24,7 @@ export default function CommentForm({ ticketId }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <Textarea
+        label="Comment"
         placeholder="Write a comment..."
         value={content}
         onChange={(e) => setContent(e.target.value)}

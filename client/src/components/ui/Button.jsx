@@ -12,6 +12,7 @@ const SIZES = {
 };
 
 export default function Button({
+  as: Component = 'button',
   variant = 'primary',
   size = 'md',
   className = '',
@@ -21,15 +22,16 @@ export default function Button({
   ...props
 }) {
   return (
-    <button
+    <Component
       className={`btn ${VARIANTS[variant]} ${SIZES[size]} ${className}`}
-      disabled={disabled || isLoading}
+      disabled={Component === 'button' ? disabled || isLoading : undefined}
+      aria-busy={isLoading || undefined}
       {...props}
     >
       {isLoading && (
-        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
       )}
       {children}
-    </button>
+    </Component>
   );
 }

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { usePersonal, usePersonalMutation } from '../../hooks/usePersonal';
 import { savedFilters, sameFilters, scopeLabel } from './savedFilters';
+import AccountDialog from '../ui/AccountDialog';
 import Button from '../ui/Button';
 import Input from '../ui/Input';
 import Select from '../ui/Select';
@@ -55,13 +56,13 @@ function Controls({ filters, scope, active, onSaved, onDeleted }) {
       <Input id="saved-view-name" label="View name" maxLength={60} required value={name} onChange={(e) => setName(e.target.value)} disabled={busy} autoFocus />
       <Button type="submit" disabled={busy || !name.trim()}>Save view name</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setEditing(null)}>Cancel</Button>
     </form>}
-    {confirmation && <div role="alertdialog" aria-label="Delete saved view confirmation" aria-describedby="delete-view-description" className="space-y-2 rounded-xl border border-slate-300 p-3">
-      <p id="delete-view-description">Delete this saved view? Its personal shortcuts will also be removed. Tickets are not changed.</p>
+    {confirmation && <AccountDialog role="alertdialog" title="Delete saved view confirmation" description="Delete this saved view? Its personal shortcuts will also be removed. Tickets are not changed." busy={busy} onClose={() => setConfirmation(false)}>
+      {message?.error && <p role="alert">{message.text}</p>}
       <Button disabled={busy} onClick={() => run(async () => { await remove.mutateAsync({ id: active.id, version: confirmation }); if (onDeleted) onDeleted(scope); else if (alive.current) navigate(scope === 'ARCHIVED' ? '/tickets/archived' : '/tickets'); })}>Confirm delete view</Button>
       <Button variant="secondary" disabled={busy} onClick={() => setConfirmation(false)}>Keep view</Button>
-    </div>}
+    </AccountDialog>}
     {busy && <p role="status">Saving preference…</p>}
-    {message && <p role={message.error ? 'alert' : 'status'} className="text-sm text-slate-700">{message.text}</p>}
+    {message && !confirmation && <p role={message.error ? 'alert' : 'status'} className="text-sm text-slate-700">{message.text}</p>}
   </section>;
 }
 export default function SavedViewsBar(props) {
