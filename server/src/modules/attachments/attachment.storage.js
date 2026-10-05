@@ -5,7 +5,7 @@ const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const AppError = require('../../utils/AppError');
 
-const UPLOAD_ROOT = path.resolve(__dirname, '../../../uploads');
+const UPLOAD_ROOT = process.env.ATTACHMENT_STORAGE_ROOT || path.resolve(__dirname, '../../../uploads');
 const MANAGED_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(png|jpe?g|webp|pdf|docx?|xlsx?|txt|csv|zip)(?![\s\S])/i;
 const identifier = (name) => crypto.createHash('sha256').update(name.toLowerCase()).digest('hex');
 const unsafe = () => new AppError('Attachment storage is unsafe or unavailable', 503);

@@ -1,6 +1,8 @@
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const { pipeline } = require('stream/promises');
+const { signatureGuard } = require('./attachmentSignature');
 const { store, UPLOAD_ROOT } = require('../modules/attachments/attachment.storage');
 const AppError = require('../utils/AppError');
 const env = require('../config/env');
@@ -45,10 +47,16 @@ const storage = {
     const randomName = crypto.randomUUID();
     const ext = path.extname(file.originalname).toLowerCase();
     const filename = `${randomName}${ext}`;
-    store.saveStream(filename, file.stream).then(
-      (size) => cb(null, { destination: UPLOAD_ROOT, filename, path: store.resolve(filename), size }),
-      (error) => cb(error),
-    );
+    const guard = signatureGuard(ext);
+    // Consume both failures: a failed storage open must also stop the input pipe.
+    const writing = store.saveStream(filename, guard).catch((error) => { guard.destroy(error); throw error; });
+    Promise.allSettled([writing, pipeline(file.stream, guard)]).then(([saved, piped]) => {
+      // Await unpublished-file cleanup before returning any rejection.
+      if (saved.status === 'rejected' && /cleanup is incomplete/.test(saved.reason.message)) return cb(saved.reason);
+      if (piped.status === 'rejected') return cb(piped.reason);
+      if (saved.status === 'rejected') return cb(saved.reason);
+      cb(null, { destination: UPLOAD_ROOT, filename, path: store.resolve(filename), size: saved.value });
+    });
   },
   _removeFile: (req, file, cb) => {
     // Multer invokes this only for this request's unpublished exclusive file.
@@ -57,6 +65,9 @@ const storage = {
 };
 
 function fileFilter(req, file, cb) {
+  if (!file.originalname || file.originalname.length > 200 || /[\u0000-\u001f\u007f/\\:]/.test(file.originalname) || /[. ]$/.test(file.originalname) || file.originalname.startsWith('.')) {
+    return cb(new AppError('Invalid attachment filename', 422));
+  }
   const ext = path.extname(file.originalname).toLowerCase();
 
   if (BLOCKED_EXTENSIONS.includes(ext)) {
@@ -77,6 +88,10 @@ const upload = multer({
   limits: {
     fileSize: MAX_FILE_SIZE_BYTES,
     files: 1,
+    fields: 0,
+    // Busboy emits partsLimit on reaching the boundary, including the valid file.
+    // files/fields enforce the one-file/no-fields contract; two bounds parsing.
+    parts: 2,
   },
 });
 
@@ -92,6 +107,7 @@ function uploadSingleFile(fieldName) {
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
         return next(new AppError(`File is too large. Maximum file size is ${env.MAX_ATTACHMENT_SIZE_MB} MB.`, 413));
       }
+      if (err instanceof multer.MulterError) return next(new AppError('Invalid multipart upload', 422));
       return next(err instanceof AppError ? err : new AppError('Upload could not be completed', 503));
     });
   };

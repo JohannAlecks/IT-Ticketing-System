@@ -1,4 +1,5 @@
-require('dotenv').config();
+// Production credentials are injected by the hosting process, never read from disk.
+if (!['production', 'test'].includes(process.env.NODE_ENV)) require('dotenv').config();
 const { isIP } = require('node:net');
 
 const required = ['DATABASE_URL', 'JWT_SECRET'];
@@ -102,7 +103,6 @@ function clientUrlValue() {
 }
 
 if (!EMAIL_PROVIDERS.has(EMAIL_PROVIDER)) invalid('EMAIL_PROVIDER must be exactly disabled or resend');
-if (NODE_ENV === 'production' && EMAIL_PROVIDER !== 'resend') invalid('Production requires EMAIL_PROVIDER=resend');
 
 const EMAIL_FROM = senderValue();
 const EMAIL_REPLY_TO = emailValue('EMAIL_REPLY_TO');
@@ -110,22 +110,15 @@ const EMAIL_SUPPORT = emailValue('EMAIL_SUPPORT');
 const RESEND_API_KEY = process.env.RESEND_API_KEY?.trim() || null;
 if (EMAIL_PROVIDER === 'resend' && !RESEND_API_KEY) invalid('Missing required env var: RESEND_API_KEY');
 const CLIENT_URL = clientUrlValue();
+const security = require('./security').security(process.env, CLIENT_URL);
 
 module.exports = {
   NODE_ENV,
-  PORT: process.env.PORT || 5000,
   DATABASE_URL: process.env.DATABASE_URL,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '1d',
   CLIENT_URL,
-  CORS_ORIGINS: (process.env.CORS_ORIGINS || CLIENT_URL).split(',').map((value) => value.trim()).filter(Boolean),
-  TRUST_PROXY: process.env.TRUST_PROXY === 'true',
   LOG_FORMAT: process.env.LOG_FORMAT || (NODE_ENV === 'production' ? 'json' : 'pretty'),
-  AUTH_RATE_LIMIT_WINDOW_MS: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  AUTH_RATE_LIMIT_MAX: Number(process.env.AUTH_RATE_LIMIT_MAX) || 10,
-  API_RATE_LIMIT_WINDOW_MS: Number(process.env.API_RATE_LIMIT_WINDOW_MS) || 60 * 1000,
-  API_RATE_LIMIT_MAX: Number(process.env.API_RATE_LIMIT_MAX) || 120,
-  MAX_ATTACHMENT_SIZE_MB: Number(process.env.MAX_ATTACHMENT_SIZE_MB) || 5,
   ALLOWED_ATTACHMENT_MIME_TYPES: process.env.ALLOWED_ATTACHMENT_MIME_TYPES || null,
   STORAGE_PROVIDER: process.env.STORAGE_PROVIDER || 'local',
   EMAIL_PROVIDER,
@@ -137,4 +130,5 @@ module.exports = {
   EMAIL_DELIVERY_TIMEOUT_MS: positiveBoundedNumber('EMAIL_DELIVERY_TIMEOUT_MS', 10000, 120000),
   EMAIL_VERIFICATION_TOKEN_TTL_HOURS: positiveBoundedNumber('EMAIL_VERIFICATION_TOKEN_TTL_HOURS', 24, 720),
   EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: positiveBoundedNumber('EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS', 60, 86400),
+  ...security,
 };

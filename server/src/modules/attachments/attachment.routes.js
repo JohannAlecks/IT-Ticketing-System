@@ -11,7 +11,13 @@ const validateUuidParam = require('../../middleware/validateUuidParam');
 // delete for THIS ticket) happens inside attachment.service.js, not here —
 // same pattern as comment.routes.js.
 router.get('/', attachmentController.listAttachments);
-router.post('/', uploadSingleFile('file'), attachmentController.uploadAttachment);
+const env = require('../../config/env');
+const uploadLimit = require('../../middleware/rateLimit')({ windowMs: env.UPLOAD_RATE_LIMIT_WINDOW_MS, max: env.UPLOAD_RATE_LIMIT_MAX, keyGenerator: (req) => req.user.id });
+const preauthorize = require('../../utils/asyncHandler')(async (req, res, next) => {
+  await require('./attachment.service').authorizeUpload(req.params.ticketId, req.user);
+  next();
+});
+router.post('/', uploadLimit, preauthorize, uploadSingleFile('file'), attachmentController.uploadAttachment);
 router.get('/:attachmentId/download', validateUuidParam('attachmentId'), attachmentController.downloadAttachment);
 router.delete('/:attachmentId', validateUuidParam('attachmentId'), attachmentController.deleteAttachment);
 

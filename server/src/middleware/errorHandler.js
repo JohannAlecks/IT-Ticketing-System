@@ -1,14 +1,17 @@
 const env = require('../config/env');
+const AppError = require('../utils/AppError');
 
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
-  let statusCode = err.statusCode || 500;
-  let message = err.message || 'Internal server error';
-  let details = err.details || null;
+  let statusCode = err instanceof AppError ? err.statusCode : 500;
+  // AppError is the application's explicit, sanitized domain-error boundary,
+  // including recoverable 503 failures. Never expose arbitrary driver errors.
+  let message = err instanceof AppError ? err.message : 'Internal server error';
+  let details = err instanceof AppError && statusCode < 500 ? err.details : null;
 
   if (err.code === 'P2002') {
     statusCode = 409;
-    message = `Duplicate value for field: ${err.meta?.target?.join(', ') || 'unknown'}`;
+    message = 'A record with that value already exists.';
   }
   if (err.code === 'P2025') {
     statusCode = 404;

@@ -16,6 +16,13 @@ async function listAttachments(ticketId, user) {
   });
 }
 
+async function authorizeUpload(ticketId, user) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket not found', 404);
+  assertTicketVisible(ticket, user);
+  assertTicketIsActive(ticket);
+}
+
 async function uploadAttachment(ticketId, file, user) {
   if (!file) throw new AppError('No file was uploaded', 400);
 
@@ -107,4 +114,4 @@ async function deleteAttachment(ticketId, attachmentId, user) {
   await cleanupFiles(prisma, [attachment], { ticketId, actorUserId: user.id, operation: 'attachment.delete' });
 }
 
-module.exports = { listAttachments, uploadAttachment, getAttachmentForDownload, deleteAttachment };
+module.exports = { listAttachments, authorizeUpload, uploadAttachment, getAttachmentForDownload, deleteAttachment };

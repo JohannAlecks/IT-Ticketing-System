@@ -1,5 +1,19 @@
 # Isolated E2E verification — installed Chrome 154
 
+## Current browser approval — October 4, 2026
+
+The user approved installed Chrome **154.0.8037.95**, reverified at
+`C:\Program Files\Google\Chrome\Application\chrome.exe` before editing. The strict
+runtime guard, active project labels and mobile-emulation user agent now identify
+that exact version. `channel: 'chrome'`, fresh temporary profiles, separate account
+contexts, all mobile descriptors and zero automatic retries remain unchanged.
+Both independent functional runs passed **29/29** and the bounded compatibility
+check passed **10/10**, with **24 scanned states**, zero Axe violations and zero
+test failures, skips or retries. Exact October 4–5 results, cleanup, incomplete Axe
+findings and limitations are recorded in [PRIVATE_BETA_RELEASE.md](PRIVATE_BETA_RELEASE.md).
+All earlier dated browser evidence below is retained verbatim under its original
+version labels; none of it counts as execution on the new patch version.
+
 ## Active browser approval — October 1, 2026
 
 The executable `C:\Program Files\Google\Chrome\Application\chrome.exe` was reverified as **154.0.8037.59** immediately before updating the strict runtime guard and active desktop/mobile-emulated project labels, and remained that version after execution. Playwright remains 1.63.0 with `channel: 'chrome'`, fresh temporary profiles, separate account contexts, preserved mobile descriptors and zero retries. No personal profile, browser installation or database migration is used. **Both new functional runs passed 29/29**; the separate bounded `node runner.cjs a11y-compat` check passed **10/10 with 24 scanned states and zero Axe violations**. Exact run IDs, durations, incomplete findings, cleanup and final review are recorded in [ACCESSIBILITY.md](ACCESSIBILITY.md). Historical Chrome 152/153 evidence below is unchanged and does not count as a Chrome 154 run.

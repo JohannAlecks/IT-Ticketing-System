@@ -1,4 +1,4 @@
-require('dotenv').config();
+if (!['production', 'test'].includes(process.env.NODE_ENV)) require('dotenv').config();
 const { scanOrphans } = require('../src/modules/attachments/attachment.cleanup');
 
 function parseOptions(args) {

@@ -8,7 +8,8 @@ const { search } = require('./search.service');
 // Set privacy headers even on rejected requests.
 router.use((req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 router.use(authenticate);
-router.use(rateLimit({ windowMs: 60_000, max: 60, keyGenerator: (req) => req.user.id }));
+const env = require('../../config/env');
+router.use(rateLimit({ windowMs: env.SEARCH_RATE_LIMIT_WINDOW_MS, max: env.SEARCH_RATE_LIMIT_MAX, keyGenerator: (req) => req.user.id }));
 function handle(schema, mode) {
   return asyncHandler(async (req, res) => {
     const parsed = schema.safeParse(req.query);

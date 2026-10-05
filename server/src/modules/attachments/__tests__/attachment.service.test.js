@@ -51,6 +51,14 @@ afterAll(() => {
 });
 
 describe('deleteAttachment storage cleanup', () => {
+  test('upload preauthorization rejects inaccessible and archived tickets without writes', async () => {
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...TICKET, createdById: 'another-user' });
+    await expect(attachmentService.authorizeUpload(TICKET.id, USER)).rejects.toMatchObject({ statusCode: 403 });
+    mockPrisma.ticket.findUnique.mockResolvedValue({ ...TICKET, archivedAt: new Date() });
+    await expect(attachmentService.authorizeUpload(TICKET.id, USER)).rejects.toMatchObject({ statusCode: 409 });
+    expect(mockPrisma.ticketAttachment.create).not.toHaveBeenCalled();
+    expect(mockPrisma.ticketHistory.create).not.toHaveBeenCalled();
+  });
   test('archived tickets still allow authorized attachment downloads', async () => {
     mockPrisma.ticket.findUnique.mockResolvedValue({ ...TICKET, archivedAt: new Date() });
     jest.spyOn(fs, 'existsSync').mockReturnValue(true);

@@ -85,7 +85,9 @@ describe('environment validation', () => {
     process.env = {
       ...originalEnv,
       DATABASE_URL: 'postgresql://test:test@localhost:5432/ticketing_test',
-      JWT_SECRET: 'test-jwt-secret',
+      JWT_SECRET: require('crypto').randomBytes(48).toString('hex'),
+      CORS_ORIGINS: 'https://app.example.test',
+      STORAGE_PROVIDER: 'local', ATTACHMENT_STORAGE_PERSISTENT: 'true', ATTACHMENT_STORAGE_ROOT: require('path').resolve('synthetic-storage-not-accessed'),
       NODE_ENV: 'development',
       EMAIL_PROVIDER: 'disabled',
       ...overrides,
@@ -105,8 +107,8 @@ describe('environment validation', () => {
     expect(requireEnv({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: '', EMAIL_FROM: '' })).toThrow('EMAIL_FROM');
   });
 
-  test('production requires resend, credentials, and trusted HTTPS client URL', () => {
-    expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'disabled' })).toThrow('Production requires EMAIL_PROVIDER=resend');
+  test('production supports disabled delivery and requires trusted HTTPS client URL', () => {
+    expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'disabled', CLIENT_URL: 'https://app.example.test' })().EMAIL_PROVIDER).toBe('disabled');
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'http://localhost:5173' })).toThrow('trusted HTTPS');
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'https://localhost.' })).toThrow('non-localhost');
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'https://10.0.0.4' })).toThrow('non-private');

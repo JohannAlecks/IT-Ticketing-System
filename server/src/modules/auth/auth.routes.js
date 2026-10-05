@@ -13,16 +13,16 @@ const {
   resendVerificationSchema,
 } = require('./auth.schema');
 
-const authRateLimit = createRateLimit({ windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS, max: env.AUTH_RATE_LIMIT_MAX });
+const authRateLimit = () => createRateLimit({ windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS, max: env.AUTH_RATE_LIMIT_MAX });
 const resendIdentityRateLimit = createRateLimit({
   windowMs: env.AUTH_RATE_LIMIT_WINDOW_MS,
   max: env.AUTH_RATE_LIMIT_MAX,
   keyGenerator: (req) => `resend-verification:${req.body.email}`,
 });
-router.post('/register', authRateLimit, validate(registerSchema), authController.register);
-router.post('/login', authRateLimit, validate(loginSchema), authController.login);
-router.post('/verify-email', validate(verifyEmailSchema), authController.verifyEmail);
-router.post('/resend-verification', authRateLimit, validate(resendVerificationSchema), resendIdentityRateLimit, authController.resendVerification);
+router.post('/register', authRateLimit(), validate(registerSchema), authController.register);
+router.post('/login', authRateLimit(), validate(loginSchema), authController.login);
+router.post('/verify-email', authRateLimit(), validate(verifyEmailSchema), authController.verifyEmail);
+router.post('/resend-verification', authRateLimit(), validate(resendVerificationSchema), resendIdentityRateLimit, authController.resendVerification);
 router.get('/me', authenticate, authController.me);
 
 module.exports = router;

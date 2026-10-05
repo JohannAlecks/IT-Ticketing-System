@@ -43,8 +43,17 @@ test('unsupported types never create a file', async () => {
   expect((await send('synthetic', 'synthetic.exe', 'application/octet-stream')).status).toBe(422);
   expect(await fs.promises.readdir(store.root)).toEqual([]);
 });
+test.each(['.hidden.txt', 'malformed:name.txt', 'trailing.txt.', 'long'.repeat(51) + '.txt'])('unsafe original filename never creates storage', async (filename) => {
+  expect((await send('synthetic', filename)).status).toBe(422);
+  expect(await fs.promises.readdir(store.root)).toEqual([]);
+});
 test('size rejection removes only its unpublished synthetic file through validated cleanup', async () => {
   expect((await send('synthetic'.repeat(10))).status).toBe(413);
+  expect(await fs.promises.readdir(store.root)).toEqual([]);
+});
+test('renamed executable content fails signature checks and leaves no file', async () => {
+  const result = await send('MZ synthetic', 'pretend.pdf', 'application/pdf');
+  expect(result.status).toBe(422);
   expect(await fs.promises.readdir(store.root)).toEqual([]);
 });
 test('Multer cleanup failure is reported safely and leaves the orphan available for recovery', async () => {

@@ -52,7 +52,7 @@ async function withIsolatedBrowser(use, info) {
     } finally {
       for (const key of ['TMP', 'TEMP']) original[key] === undefined ? delete process.env[key] : process.env[key] = original[key];
     }
-    if (browser.version() !== '154.0.8037.59') throw fail('CHROME_VERSION_CHANGED');
+    if (browser.version() !== '154.0.8037.95') throw fail('CHROME_VERSION_CHANGED');
     if (fs.readdirSync(profileParent).filter((name) => name.startsWith('playwright_chromiumdev_profile-')).length !== 1) throw fail('FRESH_PROFILE_REQUIRED');
     await use(browser);
   } finally {

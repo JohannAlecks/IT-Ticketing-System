@@ -3,11 +3,11 @@ const env = require('../config/env');
 function requestLogger(req, res, next) {
   const startedAt = process.hrtime.bigint();
   res.on('finish', () => {
-    if (req.path === '/health') return;
+    if (['/health', '/health/ready'].includes(req.path)) return;
     const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
     const event = {
       timestamp: new Date().toISOString(), requestId: req.requestId,
-      method: req.method, route: req.route?.path || req.baseUrl || req.path,
+      method: req.method, route: req.route?.path || '[unmatched]',
       status: res.statusCode, durationMs: Math.round(durationMs * 100) / 100,
       userId: req.user?.id, ip: req.ip,
     };
