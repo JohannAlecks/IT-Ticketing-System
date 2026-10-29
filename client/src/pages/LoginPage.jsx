@@ -36,8 +36,8 @@ export default function LoginPage() {
           <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-white">
             <LifeBuoy className="h-5 w-5" />
           </div>
-          <h1 className="text-xl font-semibold text-gray-900">Sign in to HelpDesk</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage and resolve support tickets</p>
+          <h1 className="text-xl font-semibold text-gray-900">Sign in to SupportFlow</h1>
+          <p className="mt-1 text-sm text-gray-500">IT Support &amp; Service Desk</p>
         </div>
 
         <form onSubmit={handleSubmit} className="card space-y-4 p-6">

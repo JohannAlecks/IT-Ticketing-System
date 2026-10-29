@@ -214,7 +214,7 @@ async function changeUserLifecycle(id, change, actor, requestId) {
           recipientId: id,
           type: 'ACCOUNT_REACTIVATED',
           title: 'Account reactivated',
-          message: 'Your HelpDesk account has been reactivated.',
+          message: 'Your SupportFlow account has been reactivated.',
           eventId: auditEvent.id,
         })],
       });

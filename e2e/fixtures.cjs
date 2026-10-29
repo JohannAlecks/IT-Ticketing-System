@@ -3,6 +3,7 @@ const { randomUUID, randomBytes, createHash } = require('node:crypto');
 const fs = require('node:fs'); const path = require('node:path');
 const { database, fingerprint, runtimeIdentity, temporaryRoot, serverRequire, WEB, API, fail } = require('./safety.cjs');
 const { contextOptions, withIsolatedBrowser } = require('./browser-fixture.cjs');
+const { failureState, failureError, cleanupStep } = require('./failure.cjs');
 async function signIn(page, account) {
   await page.goto('/login');
   await page.getByLabel('Email', { exact: true }).fill(account.email);
@@ -93,10 +94,17 @@ const test = base.extend({
       },
       async preservePolicy(id) { if (!policyOriginals.has(id)) policyOriginals.set(id, await db.slaPolicy.findUniqueOrThrow({ where: { id } })); },
     };
+    const failures = { primary: null, secondary: [] };
     try { await use(fx); }
+    catch (error) { Object.assign(failures, failureState(error, 'assertion')); }
     finally {
-      await Promise.all(contexts.map((ctx) => ctx.close()));
-      try {
+      // Playwright can retain an assertion on TestInfo rather than rejecting use.
+      if (!failures.primary && info.errors?.length) Object.assign(failures, failureState(info.errors[0], 'assertion'));
+      for (const ctx of contexts) {
+        for (const page of ctx.pages()) await cleanupStep(failures, 'page-close', () => page.close());
+      }
+      for (const ctx of contexts) await cleanupStep(failures, 'context-close', () => ctx.close());
+      await cleanupStep(failures, 'fixture-cleanup', async () => {
         await runtimeIdentity();
         await expect.poll(async () => {
           const r = await fetch(API + '/health', { signal: AbortSignal.timeout(3000) });
@@ -131,8 +139,10 @@ const test = base.extend({
         }
         if (JSON.stringify(await fingerprint(db)) !== JSON.stringify(before)) throw fail('TEST_FIXTURE_CLEANUP');
         console.log(JSON.stringify({ status: 'test-fixture-cleanup', baselineRestored: true, temporaryUploadsRestored: true }));
-      } finally { await db.$disconnect(); }
+      });
+      await cleanupStep(failures, 'fixture-cleanup', () => db.$disconnect());
     }
+    if (failures.primary) throw failureError(failures);
   },
 });
 module.exports = { test, expect, signIn, signOut, apiStatus };

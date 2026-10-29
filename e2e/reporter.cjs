@@ -1,7 +1,9 @@
 // Never print Playwright error bodies, locator call logs, request data or attachments.
 const { emit } = require('./evidence.cjs');
+const { decode } = require('./failure.cjs');
 const record = (value) => emit(process.env.E2E_RUN_ID, value);
 function safeFailure(error) {
+  const structured = decode(error); if (structured) return structured;
   const message = error?.message || '';
   return { category: /(?:E2E refused|Test database refused): ([A-Z_]+)/.exec(message)?.[1] ||
     (/No tests found/.test(message) ? 'NO_TESTS_FOUND' : /strict mode violation/i.test(message) ? 'STRICT_LOCATOR' : /is not a function/i.test(message) ? 'NOT_FUNCTION' : /timeout|timed out/i.test(message) ? 'TIMEOUT' : 'ASSERTION_OR_RUNNER'),
@@ -11,7 +13,7 @@ function safeFailure(error) {
 class SafeReporter {
   onStdOut(chunk) {
     for (const line of String(chunk).split('\n')) {
-      try { const value = JSON.parse(line); if (['a11y-scan', 'browser-cleanup', 'browser-cleanup-diagnostic', 'test-fixture-cleanup', 'readiness-transport-diagnostic'].includes(value.status)) record(value); } catch { /* never forward raw logs */ }
+      try { const value = JSON.parse(line); if (['a11y-scan', 'browser-launch', 'browser-failure', 'browser-cleanup', 'browser-cleanup-diagnostic', 'test-fixture-cleanup', 'readiness-transport-diagnostic'].includes(value.status)) record(value); } catch { /* never forward raw logs */ }
     }
   }
   onBegin(config, suite) { this.total = suite.allTests().length; this.passed = 0; this.invalid = 0; this.executed = 0; this.skipped = 0; this.retries = 0; record({ e2eCollected: this.total }); }

@@ -1,6 +1,7 @@
 {
-  "name": "ticketing-system-e2e",
+  "name": "supportflow-e2e",
   "private": true,
+  "description": "IT Support & Service Desk",
   "version": "1.0.0",
   "scripts": {
     "test": "node runner.cjs full",
@@ -9,7 +10,7 @@
     "test:headed": "node runner.cjs headed",
     "test:repeat": "node runner.cjs repeat",
     "test:verify": "node runner.cjs verify",
-    "test:infra": "node --test infrastructure.test.cjs",
+    "test:infra": "node --test infrastructure.test.cjs cleanup.test.cjs",
     "test:runtime": "node runner.cjs runtime",
     "test:list": "playwright test --list --reporter=list",
     "preflight": "node preflight.cjs",

@@ -43,6 +43,9 @@ test('same-tab account switch clears notification, search and report caches with
 test('login validation, protected redirects and logout @smoke @mobile', async ({ fx }) => {
   const ctx = await fx.context(); const page = await ctx.newPage(); const user = await fx.account();
   await page.goto('/tickets'); await expect(page).toHaveURL(/\/login$/);
+  await expect(page).toHaveTitle('Sign in | SupportFlow');
+  await expect(page.getByRole('heading', { name: 'Sign in to SupportFlow', exact: true })).toBeVisible();
+  await expect(page.getByText('IT Support & Service Desk', { exact: true })).toBeVisible();
   await page.getByLabel('Email', { exact: true }).fill(user.email);
   await page.getByLabel('Password', { exact: true }).fill('Synthetic-wrong!123');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

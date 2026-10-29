@@ -2,6 +2,8 @@ const fs = require('node:fs'); const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { chromium } = require('@playwright/test');
 const { temporaryRoot, environment, WEB, fail } = require('./safety.cjs');
+const { failureState, failureError, cleanupStep } = require('./failure.cjs');
+const { waitForExit, ownedProcessesGone } = require('./cleanup.cjs');
 async function profileEmpty(directory, timeoutMs = 5000) {
   // On worker failure Playwright may disconnect before its asynchronous
   // directory cleanup finishes. Observe completion; never delete or ignore it.
@@ -38,32 +40,65 @@ function contextOptions(config) {
   return { ...Object.fromEntries(keys.filter((key) => config[key] !== undefined).map((key) => [key, config[key]])),
     baseURL: WEB, serviceWorkers: 'block', acceptDownloads: true };
 }
+async function browserLifecycle({ launch, verify, use, wait, inspect, record }) {
+  let browser; let phase = 'launch'; const state = { primary: null, secondary: [] };
+  const started = Date.now();
+  try {
+    browser = await launch(); await verify(browser);
+    record({ status: 'browser-launch', browser: browser.version(), durationMs: Date.now() - started });
+    phase = 'assertion'; await use(browser);
+  } catch (error) { Object.assign(state, failureState(error, phase)); }
+  // Explicit pages -> contexts -> browser ordering also flushes Playwright's
+  // context-owned artifact handles. A close error cannot suppress later cleanup.
+  const contexts = browser?.contexts() || [];
+  for (const context of contexts) {
+    for (const page of context.pages()) await cleanupStep(state, 'page-close', () => page.close());
+  }
+  for (const context of contexts) await cleanupStep(state, 'context-close', () => context.close());
+  await cleanupStep(state, 'browser-close', async () => { await browser?.close(); });
+  await cleanupStep(state, 'process-shutdown', wait);
+  await cleanupStep(state, 'artifact-cleanup', () => inspect(state, browser));
+  if (state.primary) {
+    record({ status: 'browser-failure', ...state });
+    throw failureError(state);
+  }
+}
 async function withIsolatedBrowser(use, info) {
   environment(); const root = temporaryRoot(process.env.E2E_TEMP_ROOT);
   if (info.project.use.channel !== 'chrome') throw fail('CHROME_CHANNEL_REQUIRED');
   const profileParent = path.join(root, 'browser-' + randomUUID()); fs.mkdirSync(profileParent);
-  const original = { TMP: process.env.TMP, TEMP: process.env.TEMP }; let browser;
-  try {
+  const original = { TMP: process.env.TMP, TEMP: process.env.TEMP };
+  const record = info.record || ((row) => console.log(JSON.stringify(row)));
+  await browserLifecycle({
+    launch: async () => {
     // Playwright creates its own non-persistent user-data directory beneath this
     // owned temp root. Never attach to Chrome or supply a personal userDataDir.
     try {
       process.env.TMP = profileParent; process.env.TEMP = profileParent;
-      browser = await chromium.launch({ channel: 'chrome', headless: info.project.use.headless ?? true, timeout: 30000 });
+      return await chromium.launch({ channel: 'chrome', headless: info.project.use.headless ?? true, timeout: 30000 });
     } finally {
       for (const key of ['TMP', 'TEMP']) original[key] === undefined ? delete process.env[key] : process.env[key] = original[key];
     }
-    if (browser.version() !== '154.0.8037.95') throw fail('CHROME_VERSION_CHANGED');
+    },
+    verify: async (browser) => {
+    if (browser.version() !== '155.0.8059.40') throw fail('CHROME_VERSION_CHANGED');
     if (fs.readdirSync(profileParent).filter((name) => name.startsWith('playwright_chromiumdev_profile-')).length !== 1) throw fail('FRESH_PROFILE_REQUIRED');
-    await use(browser);
-  } finally {
-    await browser?.close();
-    await profileEmpty(profileParent);
-    const chromeFetchArtifactsRemoved = removeChromeFetchArtifacts(root, profileParent, !browser?.isConnected());
-    const empty = fs.readdirSync(profileParent).length === 0;
-    if (!empty) console.log(JSON.stringify({ status: 'browser-cleanup-diagnostic', remnants: fs.readdirSync(profileParent, { withFileTypes: true }).map(entry => ({ category: entry.name.startsWith('playwright_chromiumdev_profile-') ? 'profile' : entry.name.startsWith('playwright-artifacts-') ? 'artifacts' : 'other', directory: entry.isDirectory() })) }));
-    console.log(JSON.stringify({ status: 'browser-cleanup', browser: browser ? `Chrome ${browser.version()}` : 'not launched', disconnected: !browser?.isConnected(), profileAndArtifactsRemoved: empty, chromeFetchArtifactsRemoved }));
-    if (!empty) throw fail('BROWSER_PROFILE_CLEANUP');
-    fs.rmdirSync(profileParent);
-  }
+    }, use,
+    wait: () => waitForExit((remaining) => ownedProcessesGone(root, remaining)),
+    inspect: async (state, browser) => {
+      await cleanupStep(state, 'profile-cleanup', async () => {
+        await profileEmpty(profileParent);
+        if (fs.readdirSync(profileParent).some((n) => n.startsWith('playwright_chromiumdev_profile-'))) throw fail('BROWSER_PROFILE_CLEANUP');
+      });
+      await cleanupStep(state, 'artifact-cleanup', async () => {
+        if (fs.readdirSync(profileParent).some((n) => !n.startsWith('playwright_chromiumdev_profile-') && !/^chrome_chrome_url_fetcher_[0-9]+_[0-9]+$/.test(n))) throw fail('BROWSER_ARTIFACT_CLEANUP');
+      });
+      record({ status: 'browser-cleanup', browser: browser ? `Chrome ${browser.version()}` : 'not launched', disconnected: !browser?.isConnected(),
+        profileAndArtifactsRemoved: !state.secondary.some((e) => ['profile-cleanup', 'artifact-cleanup'].includes(e.phase)) && !['profile-cleanup', 'artifact-cleanup'].includes(state.primary?.phase),
+        scratchDeletionDeferredToRunner: true });
+      // Never remove a profile before the outer runner has stopped web/API and
+      // received the Playwright child's close event (reporter/streams closed).
+    }, record,
+  });
 }
-module.exports = { contextOptions, withIsolatedBrowser, profileEmpty, removeChromeFetchArtifacts };
+module.exports = { contextOptions, withIsolatedBrowser, profileEmpty, removeChromeFetchArtifacts, browserLifecycle };

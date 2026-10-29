@@ -1,4 +1,4 @@
-# Ticketing System — Backend + Frontend (Steps 1–5)
+# SupportFlow — IT Support & Service Desk
 
 This package contains:
 - **`server/`** — Express + Prisma + PostgreSQL API (`auth`, `users`, `tickets`, `comments`, `dashboard`)
@@ -338,10 +338,10 @@ Configure production secrets in the deployment platform rather than source contr
 ```env
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=deployment-only-secret
-EMAIL_FROM=HelpDesk <support@mail.example.com>
+EMAIL_FROM=SupportFlow <support@mail.example.com>
 EMAIL_REPLY_TO=help@example.com
 EMAIL_SUPPORT=help@example.com
-EMAIL_APP_NAME=HelpDesk
+EMAIL_APP_NAME=SupportFlow
 EMAIL_DELIVERY_TIMEOUT_MS=10000
 EMAIL_VERIFICATION_TOKEN_TTL_HOURS=24
 EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS=60
@@ -355,7 +355,7 @@ smallest operations group, and rotate it immediately after suspected exposure an
 defined operational schedule. Never put it in `.env.example`, a client `VITE_*` variable,
 source control, logs, tests, or tickets.
 
-`EMAIL_FROM` uses standard display-name sender syntax (`HelpDesk <address@domain>`). Its
+`EMAIL_FROM` uses standard display-name sender syntax (`SupportFlow <address@domain>`). Its
 domain must be owned by the operator and aligned with the domain verified in Resend.
 Use a dedicated sending subdomain such as `mail.example.com` where practical, then add
 and verify the SPF and DKIM DNS records Resend provides before enabling production

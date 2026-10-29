@@ -1,4 +1,27 @@
-# Isolated E2E verification — installed Chrome 154
+# Isolated E2E verification — installed Chrome 155
+
+## Current SupportFlow browser approval — October 16, 2026
+
+The approved strict installed-browser pin is **Chrome 155.0.8059.40**, reverified
+at `C:\Program Files\Google\Chrome\Application\chrome.exe` immediately before
+editing. Active projects retain `channel: 'chrome'`, fresh temporary profiles,
+separate account contexts, unchanged mobile emulation and zero automatic retries.
+The subsequent infrastructure diagnostic launched Chrome successfully, but its
+owned-process inventory failed closed. Automatic root cleanup was refused; the
+verified exact synthetic root was later safely removed without relaunching.
+Zero functional tests executed. See the October 16 infrastructure checkpoint in
+`SUPPORTFLOW_BRANDING.md`; the current verdict is **fix-first**. Historical
+results below are not functional verification evidence for Chrome 155.
+All earlier dated sections and evidence files retain their original version labels.
+
+## Current SupportFlow verification — October 10, 2026
+
+The approved installed-browser pin is **Chrome 154.0.8037.98**, reverified at
+`C:\Program Files\Google\Chrome\Application\chrome.exe` immediately before editing.
+Current projects use the exact patch-version labels, `channel: 'chrome'`, fresh
+temporary profiles, separate account contexts, unchanged mobile descriptors and
+zero retries. See [SUPPORTFLOW_BRANDING.md](SUPPORTFLOW_BRANDING.md) for this run's
+results. All dated evidence below retains its original brand and browser version.
 
 ## Current browser approval — October 4, 2026
 

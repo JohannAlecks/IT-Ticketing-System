@@ -145,7 +145,7 @@ function SummaryHeader({ role, user, windowDays }) {
     <section className="card overflow-hidden bg-gradient-to-br from-white via-white to-brand-50/70 p-5 sm:p-6" aria-labelledby="dashboard-heading">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="eyebrow text-brand-700">HelpDesk summary</p>
+          <p className="eyebrow text-brand-700">SupportFlow summary</p>
           <h1 id="dashboard-heading" className="page-title mt-1">{config.heading}</h1>
           <p className="page-subtitle">{config.subtitle}{firstName ? ` Welcome, ${firstName}.` : ''}</p>
           <p className="mt-2 text-xs text-slate-500">Rolling window: {windowDays} days</p>

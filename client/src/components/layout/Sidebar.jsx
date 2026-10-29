@@ -58,7 +58,7 @@ export default function Sidebar({ mobileOpen, onClose }) {
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white shadow-sm shadow-brand-600/30">
           <LifeBuoy className="h-4 w-4" />
         </div>
-        <div><span className="block text-base font-bold tracking-tight text-slate-950">HelpDesk</span><span className="block text-[11px] text-slate-500">IT Support & Service Desk</span></div>
+        <div><span className="block text-base font-bold tracking-tight text-slate-950">SupportFlow</span><span className="block text-[11px] text-slate-500">IT Support & Service Desk</span></div>
         </div>
         <button aria-label="Close navigation" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"><X aria-hidden="true" className="h-4 w-4" /></button>
       </div>

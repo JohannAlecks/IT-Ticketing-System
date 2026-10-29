@@ -46,7 +46,7 @@ describe('reactivateUser', () => {
     mockPrisma.notification.createMany.mockResolvedValue({ count: 1 });
     await userService.reactivateUser(INACTIVE_AGENT.id, ACTOR, 'request-3');
     expect(mockPrisma.auditEvent.create.mock.invocationCallOrder[0]).toBeLessThan(mockPrisma.notification.createMany.mock.invocationCallOrder[0]);
-    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: INACTIVE_AGENT.id, type: 'ACCOUNT_REACTIVATED' })] }));
+    expect(mockPrisma.notification.createMany).toHaveBeenCalledWith(expect.objectContaining({ data: [expect.objectContaining({ recipientId: INACTIVE_AGENT.id, type: 'ACCOUNT_REACTIVATED', message: 'Your SupportFlow account has been reactivated.' })] }));
 
     jest.clearAllMocks();
     mockPrisma.user.findUnique.mockResolvedValue({ ...INACTIVE_AGENT, isActive: true });

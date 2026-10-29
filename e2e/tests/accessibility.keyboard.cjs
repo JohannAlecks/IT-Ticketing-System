@@ -31,7 +31,7 @@ test('keyboard public skip link, form order and server-error focus @mobile', asy
   await page.keyboard.press('Tab'); await visibleFocus(page.getByLabel('Password', { exact: true }));
   await page.keyboard.press('Tab'); await visibleFocus(page.getByRole('button', { name: 'Sign in', exact: true }));
   await page.getByRole('link', { name: 'Create one', exact: true }).focus(); await page.keyboard.press('Enter');
-  await expect(page.getByRole('main')).toBeFocused(); await expect(page).toHaveTitle('Create account | HelpDesk');
+  await expect(page.getByRole('main')).toBeFocused(); await expect(page).toHaveTitle('Create account | SupportFlow');
   await page.getByLabel('Full name', { exact: true }).fill(fx.prefix + ' Validation');
   await page.getByLabel('Email', { exact: true }).fill(fx.prefix + '-validation@example.test');
   await page.getByLabel('Password', { exact: true }).fill('short');
@@ -93,7 +93,7 @@ test('keyboard search, notification tabs, native ticket navigation and sorting @
   await expect(page.getByRole('columnheader').filter({ has: sort })).toHaveAttribute('aria-sort', 'ascending');
   await page.keyboard.press('Enter'); await expect(page.getByRole('columnheader').filter({ has: sort })).toHaveAttribute('aria-sort', 'descending');
   const link = page.getByRole('link', { name: ticket.title, exact: true }); await link.focus(); await page.keyboard.press('Enter');
-  await expect(page.getByRole('main')).toBeFocused(); await expect(page).toHaveTitle('Ticket details | HelpDesk');
+  await expect(page.getByRole('main')).toBeFocused(); await expect(page).toHaveTitle('Ticket details | SupportFlow');
   await audit(page, 'keyboard:user:ticket-detail', rows);
   await page.goto('/tickets'); const saveView = page.getByRole('button', { name: 'Save current view', exact: true });
   // Keyboard activation must start on an enabled, focused control; unlike

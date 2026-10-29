@@ -1,7 +1,8 @@
 {
-  "name": "ticketing-system-server",
+  "name": "supportflow-server",
   "version": "1.0.0",
   "private": true,
+  "description": "IT Support & Service Desk",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",

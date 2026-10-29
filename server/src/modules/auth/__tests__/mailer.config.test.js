@@ -98,7 +98,7 @@ describe('environment validation', () => {
   test('development defaults safely to disabled and exports mail configuration', () => {
     const env = requireEnv({ EMAIL_PROVIDER: undefined });
     expect(env().EMAIL_PROVIDER).toBe('disabled');
-    expect(env().EMAIL_APP_NAME).toBe('HelpDesk');
+    expect(env().EMAIL_APP_NAME).toBe('SupportFlow');
     expect(env().EMAIL_DELIVERY_TIMEOUT_MS).toBe(10000);
   });
 
@@ -113,9 +113,9 @@ describe('environment validation', () => {
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'https://localhost.' })).toThrow('non-localhost');
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'https://10.0.0.4' })).toThrow('non-private');
     expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'from@example.test', CLIENT_URL: 'https://ticketing.internal' })).toThrow('non-private');
-    expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'RESEND', RESEND_API_KEY: 'key', EMAIL_FROM: 'HelpDesk <from@example.test>', CLIENT_URL: 'https://app.example.test' })()).toEqual(expect.objectContaining({
+    expect(requireEnv({ NODE_ENV: 'production', EMAIL_PROVIDER: 'RESEND', RESEND_API_KEY: 'key', EMAIL_FROM: 'SupportFlow <from@example.test>', CLIENT_URL: 'https://app.example.test' })()).toEqual(expect.objectContaining({
       EMAIL_PROVIDER: 'resend',
-      EMAIL_FROM: 'HelpDesk <from@example.test>',
+      EMAIL_FROM: 'SupportFlow <from@example.test>',
     }));
   });
 
@@ -124,8 +124,8 @@ describe('environment validation', () => {
     expect(requireEnv({ EMAIL_REPLY_TO: 'not-an-email' })).toThrow('EMAIL_REPLY_TO');
     expect(requireEnv({ EMAIL_SUPPORT: 'not-an-email' })).toThrow('EMAIL_SUPPORT');
     expect(requireEnv({ EMAIL_REPLY_TO: 'person@example.test,attacker@example.test' })).toThrow('EMAIL_REPLY_TO');
-    expect(requireEnv({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'HelpDesk <invalid>' })).toThrow('EMAIL_FROM');
-    expect(requireEnv({ EMAIL_APP_NAME: 'HelpDesk\r\nBcc: attacker@example.test' })).toThrow('EMAIL_APP_NAME');
+    expect(requireEnv({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 'key', EMAIL_FROM: 'SupportFlow <invalid>' })).toThrow('EMAIL_FROM');
+    expect(requireEnv({ EMAIL_APP_NAME: 'SupportFlow\r\nBcc: attacker@example.test' })).toThrow('EMAIL_APP_NAME');
     expect(requireEnv({ EMAIL_DELIVERY_TIMEOUT_MS: '0' })).toThrow('EMAIL_DELIVERY_TIMEOUT_MS');
   });
 });

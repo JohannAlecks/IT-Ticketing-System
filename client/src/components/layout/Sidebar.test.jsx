@@ -17,6 +17,8 @@ describe('Sidebar dashboard navigation', () => {
     render(<MemoryRouter><Sidebar mobileOpen={false} onClose={vi.fn()} /></MemoryRouter>);
 
     expect(screen.getByRole('link', { name: 'Summary' })).toHaveAttribute('href', '/dashboard');
+    expect(screen.getByText('SupportFlow', { exact: true })).toBeVisible();
+    expect(screen.getByText('IT Support & Service Desk', { exact: true })).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'My Reports' })).not.toBeInTheDocument();

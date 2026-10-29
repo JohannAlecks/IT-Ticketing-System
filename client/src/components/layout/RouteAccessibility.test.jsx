@@ -18,7 +18,7 @@ it('keeps initial keyboard origin at document start and makes the skip link targ
 });
 it('focuses main on a route change but not on filter edits', async () => {
   render(<View />); fireEvent.click(screen.getByRole('link', { name: 'Tickets', exact: true }));
-  await waitFor(() => expect(screen.getByRole('main')).toHaveFocus()); expect(document.title).toBe('Tickets | HelpDesk');
+  await waitFor(() => expect(screen.getByRole('main')).toHaveFocus()); expect(document.title).toBe('Tickets | SupportFlow');
   const draft = screen.getByLabelText('Draft'); draft.focus(); fireEvent.click(screen.getByRole('link', { name: 'Filter' }));
   await waitFor(() => expect(draft).toHaveFocus());
 });

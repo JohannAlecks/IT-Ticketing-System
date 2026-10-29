@@ -6,7 +6,7 @@ export function DashboardLoadingState({ heading = 'Summary' }) {
   return (
     <div className="space-y-6" aria-busy="true">
       <section className="card p-5 sm:p-6">
-        <p className="eyebrow text-brand-700">HelpDesk summary</p>
+        <p className="eyebrow text-brand-700">SupportFlow summary</p>
         <h1 className="page-title mt-1">{heading}</h1>
         <p className="page-subtitle">Loading the latest summary…</p>
       </section>

@@ -1,4 +1,18 @@
-# Private-beta release preparation
+# SupportFlow private-beta release preparation
+
+## Current branding — October 10, 2026
+
+Product: **SupportFlow — IT Support & Service Desk**. SupportFlow is a provisional
+private-beta brand pending formal trademark and domain clearance; no ownership or
+legal availability is claimed. Intended repository slug: `supportflow`. Future
+staging service prefix: `supportflow-staging` (for example, `supportflow-staging-api`
+and `supportflow-staging-web`); no resource or domain has been created.
+The GitHub repository and local remote keep their existing identity until the
+separate rename approval gate. See [SUPPORTFLOW_BRANDING.md](SUPPORTFLOW_BRANDING.md)
+for the inventory and new verification. The results below are retained Phase 1
+evidence and are not relabeled as SupportFlow/browser-patch execution.
+
+## Retained Phase 1 release evidence
 
 Status: **ship to staging** for the bounded Phase 1 preparation and verification.
 This is readiness for a separately approved staging operation, not deployment or

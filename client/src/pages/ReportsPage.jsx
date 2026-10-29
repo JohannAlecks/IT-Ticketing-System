@@ -191,7 +191,7 @@ function ReportHeader({ role, user, summary, filters, exportDisabled, onExport, 
     <section className="card overflow-hidden p-5 sm:p-6" aria-labelledby="reports-heading">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="eyebrow text-brand-700">HelpDesk reports</p>
+          <p className="eyebrow text-brand-700">SupportFlow reports</p>
           <h1 id="reports-heading" className="page-title mt-1">{copy.heading}</h1>
           <p className="page-subtitle">{copy.subtitle}{user?.name ? ` Welcome, ${user.name.split(' ')[0]}.` : ''}</p>
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
@@ -425,7 +425,7 @@ export default function ReportsPage() {
     return (
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="card p-5 sm:p-6" aria-labelledby="reports-heading">
-          <p className="eyebrow text-brand-700">HelpDesk reports</p>
+          <p className="eyebrow text-brand-700">SupportFlow reports</p>
           <h1 id="reports-heading" className="page-title mt-1">{copy.heading}</h1>
           <p className="page-subtitle">The report could not be loaded for this account.</p>
         </section>
@@ -438,7 +438,7 @@ export default function ReportsPage() {
     return (
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="card p-5 sm:p-6" aria-labelledby="reports-heading">
-          <p className="eyebrow text-brand-700">HelpDesk reports</p>
+          <p className="eyebrow text-brand-700">SupportFlow reports</p>
           <h1 id="reports-heading" className="page-title mt-1">Reports unavailable</h1>
           <p className="page-subtitle">The authenticated role and server report role do not authorize a report view.</p>
         </section>

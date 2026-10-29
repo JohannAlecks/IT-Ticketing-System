@@ -1,6 +1,7 @@
 {
-  "name": "ticketing-system-client",
+  "name": "supportflow-client",
   "private": true,
+  "description": "IT Support & Service Desk",
   "version": "1.0.0",
   "type": "module",
   "scripts": {

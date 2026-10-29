@@ -13,7 +13,7 @@ export default function RouteAccessibility() {
   const { pathname, search } = useLocation(); const { user, role } = useAuth();
   const identity = `${user?.id || 'public'}:${role || ''}`; const previous = useRef(identity);
   const previousPath = useRef(pathname);
-  useEffect(() => { document.title = `${routeTitle(pathname, search)} | HelpDesk`; }, [pathname, search]);
+  useEffect(() => { document.title = `${routeTitle(pathname, search)} | SupportFlow`; }, [pathname, search]);
   useEffect(() => {
     const changed = previous.current !== identity || previousPath.current !== pathname;
     if (previous.current !== identity) toast.remove();
