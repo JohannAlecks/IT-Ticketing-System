@@ -357,7 +357,7 @@ automated tests explicitly prevent reading it.
 
 Required backend variable names:
 
-- `NODE_ENV`, `DATABASE_URL`, `JWT_SECRET`, `CLIENT_URL`, `CORS_ORIGINS`
+- `NODE_ENV`, `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `CLIENT_URL`, `CORS_ORIGINS`
 - `STORAGE_PROVIDER`, `ATTACHMENT_STORAGE_ROOT`, `ATTACHMENT_STORAGE_PERSISTENT`
 
 Operational variables:
@@ -372,6 +372,14 @@ Operational variables:
 
 Frontend public variable: `VITE_API_URL`. It must point to the HTTPS API `/api`
 base before building; no secrets belong in it.
+
+For Supabase with Prisma 5, configure `DATABASE_URL` for application runtime
+connections and `DIRECT_URL` for Prisma CLI migrations. Use the Supabase
+connection mode supported by the selected API host for runtime traffic; the
+migration runner must be able to reach the direct database endpoint. Keep both
+URLs only in private server environment settings. See [Supabase connection
+guidance](https://supabase.com/docs/guides/database/connecting-to-postgres) and
+[Prisma's `directUrl` guidance for poolers](https://www.prisma.io/docs/orm/reference/prisma-schema-reference#directurl).
 
 Use production mode explicitly. Generate the JWT secret from at least 48 random
 bytes in a trusted secret manager; validation requires at least 48 bytes, rejects

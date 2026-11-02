@@ -29,11 +29,20 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` and set `DATABASE_URL` to point at your Postgres instance, e.g.:
+Edit `.env` and set both database URLs. `DATABASE_URL` is used by the running
+application; `DIRECT_URL` is used by Prisma CLI operations such as migrations.
+For local development, both can point to the same local database:
 
 ```
 DATABASE_URL="postgresql://postgres:yourpassword@localhost:5432/ticketing_db?schema=public"
+DIRECT_URL="postgresql://postgres:yourpassword@localhost:5432/ticketing_db?schema=public"
 ```
+
+For Supabase deployment, set `DATABASE_URL` to the connection mode appropriate
+for the API host and `DIRECT_URL` to the Supabase direct database connection.
+Keep both values in the API host's private environment settings, never in the
+Vite client's `VITE_*` variables or source control. The direct URL must be
+reachable from the machine running Prisma migrations.
 
 Also change `JWT_SECRET` to a long random string (e.g. `openssl rand -hex 32`).
 

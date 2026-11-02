@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: supportflow-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm ci && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /health/ready
+    disk:
+      name: supportflow-attachments
+      mountPath: /var/data/supportflow
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: STORAGE_PROVIDER
+        value: local
+      - key: ATTACHMENT_STORAGE_ROOT
+        value: /var/data/supportflow/uploads
+      - key: ATTACHMENT_STORAGE_PERSISTENT
+        value: "true"
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
